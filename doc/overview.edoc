@@ -1,0 +1,8 @@
+@author The services team
+@title erl_monitoring
+@doc
+This applicaion acts as a common interface for monioring utils, abstracting the actual implementation of the monitoring
+API. Currently it uses estatsd for actual monitoring, but that might change in the future. Note that this application
+also offers a couple of wrappers for generating Key names according to the company policy.
+
+Currently, for a proper usage of this application you should configure estatsd as shown in the conf folder.

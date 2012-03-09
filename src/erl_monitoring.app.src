@@ -1,0 +1,12 @@
+{application, erl_monitoring,
+ [
+  {description, "Uniform monitoring interface for erlang projects"},
+  {vsn, git},
+  {registered, [emon_app, emon_sup, emon_facade]},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { emon_app, []}},
+  {env, []}
+ ]}.
