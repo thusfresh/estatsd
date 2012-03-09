@@ -23,7 +23,7 @@ USAGE
 Add this app to your rebar deps, and make sure it's started somehow
 eg: application:start(estatsd).
 
-You can configure custom graphite host/port and flush interval using 
+You can configure custom graphite host/port and flush interval using
 application environment vars. See estatsd_sup for details.
 
 The following calls to estatsd are all gen_server:cast, ie non-blocking.
@@ -42,10 +42,10 @@ Timers
 
     estatsd:timing(sometask, 1534).         %% report that sometask took 1534ms
 
-Or for your convenience: 
+Or for your convenience:
 
     Start = erlang:now(),
-    do_sometask(), 
+    do_sometask(),
     estatsd:timing(sometast, Start).        %% uses now() and now_diff for you
 
 Sampling
@@ -53,7 +53,7 @@ Sampling
 
 Only report 10% of some_frequent_task measurements:
 
-    estatsd:timing(some_frequent_task, 12, 0.1) 
+    estatsd:timing(some_frequent_task, 12, 0.1)
 
 
 
