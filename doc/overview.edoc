@@ -5,4 +5,7 @@ This applicaion acts as a common interface for monioring utils, abstracting the 
 API. Currently it uses estatsd for actual monitoring, but that might change in the future. Note that this application
 also offers a couple of wrappers for generating Key names according to the company policy.
 
-Currently, for a proper usage of this application you should configure estatsd as shown in the conf folder.
+This application uses the following configuration keys:
+<li>environment: A string that will be used as the environment piece of the key names built through
+emon_utils:get_key_name/3.</li>
+Currently, you should also configure estatsd as shown in the conf folder.
