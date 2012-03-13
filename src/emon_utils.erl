@@ -20,7 +20,7 @@ statsnode() ->
 %% @end
 %%--------------------------------------------------------------------
 get_key_string(Team, Application, MetricChain) when MetricChain /= [] ->
-    Environment=elibs_application:get_env(erlang_monitoring, environment, "development"),
+    Environment=elibs_application:get_env(erl_monitoring, environment, "development"),
     get_key_string(Environment, Team, Application, MetricChain).
 
 

@@ -27,7 +27,7 @@ get_key_string_test_() ->
 get_key_string_with_env_test_() ->
     {setup,
         fun () ->
-                {ok, F} = elibs_application:set_env(erlang_monitoring, environment, "myenv"),
+                {ok, F} = elibs_application:set_env(erl_monitoring, environment, "myenv"),
                 [F]
         end,
         fun (Cleanup) ->
