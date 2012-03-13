@@ -3,16 +3,16 @@
 -export([statsnode/0, get_key_string/3, get_key_string/4]).
 
 %%--------------------------------------------------------------------
-%% @doc Returns the nodename with the '@' replaced by '_'
+%% @doc Returns a string like ErlangNodeName.ShortHostName
 -spec statsnode() -> string().
 %% @end
 %%--------------------------------------------------------------------
 statsnode() ->
     N=atom_to_list(node()),
-    lists:map(fun
-            ($@) -> $_;
-            (Other) -> Other
-        end, N).
+    [Nodename, Hostname]=string:tokens(N, "@"),
+    ShortHostName=lists:takewhile(fun (X) -> X /= $. end, Hostname),
+    string:join([Nodename, ShortHostName], ".").
+
 %%--------------------------------------------------------------------
 %% @doc Returns a valid keyname according to spilgames naming rules for monitoring. The 'Environment' part of e key will
 %% be read from configuration and defaulted to 'development'

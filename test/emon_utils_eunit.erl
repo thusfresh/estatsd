@@ -6,10 +6,12 @@
 
 statsnode_test_() ->
     Node=emon_utils:statsnode(),
+    Tokens=string:tokens(Node, "."),
     [
         ?_assertMatch(L when is_list(L), Node),
         ?_assert(Node/=""),
-        ?_assertEqual(0, string:str(Node, "@"))
+        ?_assertEqual(0, string:str(Node, "@")),
+        ?_assertEqual(2, length(Tokens))
     ].
 
 get_key_string_test_() ->
