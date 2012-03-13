@@ -14,9 +14,9 @@ statsnode() ->
     string:join([Nodename, ShortHostName], ".").
 
 %%--------------------------------------------------------------------
-%% @doc Returns a valid keyname according to spilgames naming rules for monitoring. The 'Environment' part of e key will
+%% @doc Returns a valid keyname according to spilgames naming rules for monitoring. The 'Environment' part of the key will
 %% be read from configuration and defaulted to 'development'
--spec get_key_string(string(), string(), [string()]) -> string().
+-spec get_key_string(string() | atom(), string() | atom(), [string() | atom()]) -> string().
 %% @end
 %%--------------------------------------------------------------------
 get_key_string(Team, Application, MetricChain) when MetricChain /= [] ->
@@ -26,7 +26,7 @@ get_key_string(Team, Application, MetricChain) when MetricChain /= [] ->
 
 %%--------------------------------------------------------------------
 %% @doc Returns a valid keyname according to spilgames naming rules for monitoring.
--spec get_key_string(string(), string(), string(), [string()]) -> string().
+-spec get_key_string(string() | atom(), string() | atom(), string() | atom(), [string() | atom()]) -> string().
 %% @end
 %%--------------------------------------------------------------------
 get_key_string(Environment, Team, Application, MetricChain) when MetricChain /= [] ->
