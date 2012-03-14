@@ -31,12 +31,13 @@ timing(Key, Duration) when is_integer(Duration), Duration>=0 ->
     estatsd:timing(Key, Duration).
 
 %%--------------------------------------------------------------------
-%% @doc Updates a timing monitoring Key with the time consumed by he execution of F.
+%% @doc Updates a timing monitoring Key with the time consumed by he execution of F. Duration will be monitored in
+%% milliseconds.
 -spec tc(string(), fun(() -> term())) -> term().
 %% @end
 %%--------------------------------------------------------------------
 tc(Key, F) ->
     {Duration, Result}=timer:tc(F),
-    estatsd:timing(Key, Duration),
+    estatsd:timing(Key, round(Duration/1000)),
     Result.
 
