@@ -72,9 +72,9 @@ tc_test_() ->
         fun (_) ->
                 [
                     ?_assertEqual(myresult, emon_facade:tc("key", fun () -> myresult end)),
-                    ?_assertEqual(myresult, ?MEASURE("key", fun () -> myresult end))
+                    ?_assertEqual(myresult, ?MEASURE("key", fun () -> myresult end)),
+                    ?_assertThrow({myerror, myreason}, emon_facade:tc("key", fun () -> throw({myerror, myreason}) end))
                 ]
         end
     }.
-
 
