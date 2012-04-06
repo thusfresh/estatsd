@@ -1,0 +1,36 @@
+#!/usr/bin/env escript
+
+main( _ ) ->
+	{ok, T} = file:consult("rebar.config"),
+	Deps = proplists:get_value(deps, T),
+
+	UnspecifiedGitDeps= lists:filter( fun( {Name,_Version,Scm} ) ->
+		case Scm of
+			
+			{git, _Url, {tag, _Tag}} -> 
+				% ok specification
+				false;
+			{git, Url, {branch, _Branch}} -> 
+				io:format(
+					"rebar.config error:~n   Branch ~p is not a valid dependency specification for ~p (~p), use a tag!~n",
+					[_Branch, Name, Url]),
+				true;
+			{git, Url} -> 
+				io:format(
+					"rebar.config error:~n   There is no valid dependency specification for ~p (~p), use a tag!~n",
+					[Name, Url]),
+			
+				true
+		end
+	end, Deps ),
+
+	ExitValue = 
+	case UnspecifiedGitDeps of
+		[] -> 0;
+		_ -> 
+			1
+	end,
+			
+	halt(ExitValue).
+
+

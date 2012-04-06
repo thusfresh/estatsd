@@ -8,11 +8,11 @@ compile:
 	rebar skip_deps=true xref | grep -v "is unused export (Xref)"
 
 getdeps:
-	rebar get-deps
+	./scripts/verify-dependency-tags && rebar get-deps
 
 # Gets the dependencies to the deps folder. This is necessary for compile to succeed.
 deps:
-	rebar get-deps
+	./scripts/verify-dependency-tags && rebar get-deps
 
 # Cleans any generated files from the repo (except dependencies)
 clean:
