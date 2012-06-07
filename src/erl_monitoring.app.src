@@ -5,7 +5,8 @@
   {registered, [emon_app, emon_sup, emon_facade]},
   {applications, [
                   kernel,
-                  stdlib
+                  stdlib,
+                  estatsd
                  ]},
   {mod, { emon_app, []}},
   {env, []}
