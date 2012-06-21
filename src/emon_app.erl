@@ -28,6 +28,7 @@ start() ->
 -spec start(normal | {takeover,node()} | {failover,node()}, term()) -> {ok, pid()}.
 
 start(_Type, _StartArgs) ->
+    elibs_application:load_extra_config(),
     elibs_application:start(estatsd),
     emon_sup:start_link().
 

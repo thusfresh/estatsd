@@ -6,7 +6,7 @@
   {applications, [
                   kernel,
                   stdlib,
-                  estatsd
+                  twig
                  ]},
   {mod, { emon_app, []}},
   {env, []}
