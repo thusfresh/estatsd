@@ -29,7 +29,8 @@ start() ->
 
 start(_Type, _StartArgs) ->
     elibs_application:load_extra_config(),
-    elibs_application:start(estatsd),
+    application:stop(estatsd),
+    ok=application:start(estatsd),
     emon_sup:start_link().
 
 %% @private
