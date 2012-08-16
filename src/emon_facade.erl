@@ -1,6 +1,6 @@
 -module(emon_facade).
 
--export([increment/3, decrement/3, timing/2, tc/2]).
+-export([increment/3, decrement/3, timing/2, tc/2, tc_pt/3]).
 
 %%--------------------------------------------------------------------
 %% @doc Increments the value of he given Key in the given Amount. Note that SampleRate smaller than 1 allows you to state that you are
@@ -41,3 +41,13 @@ tc(Key, F) ->
     estatsd:timing(Key, round(Duration/1000)),
     Result.
 
+%%--------------------------------------------------------------------
+%% @doc Allow calling tc/2 via a parse_transform decorator
+-spec tc_pt(fun(), any(), {string() | atom(), string() | atom()}) -> fun().
+%% @end
+%%--------------------------------------------------------------------
+tc_pt(Fun, Input, {AppName, FuncName}) ->
+    ResponseTimeKey=emon_utils:get_key_string("services", AppName, [FuncName, "responseTime"]),
+    fun() -> 
+            tc(ResponseTimeKey, fun() -> erlang:apply(Fun, [Input]) end ) 
+    end.

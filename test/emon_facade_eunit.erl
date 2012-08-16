@@ -8,8 +8,10 @@
 increment_test_() ->
     {setup,
         fun () ->
-                {ok, Fapp}=elibs_application:start(erl_monitoring),
-                [Fapp]
+                error_logger:tty(false),
+                {ok, Ftwig} = elibs_application:set_env(twig, level, twig_util:level(crit)),
+                {ok, Fapp} = elibs_application:start(erl_monitoring),
+                [Ftwig, Fapp]
         end,
         fun (L) ->
                 lists:foreach(fun (F) -> F() end, L)
@@ -27,8 +29,10 @@ increment_test_() ->
 decrement_test_() ->
     {setup,
         fun () ->
-                {ok, Fapp}=elibs_application:start(erl_monitoring),
-                [Fapp]
+                error_logger:tty(false),
+                {ok, Ftwig} = elibs_application:set_env(twig, level, twig_util:level(crit)),
+                {ok, Fapp} = elibs_application:start(erl_monitoring),
+                [Ftwig, Fapp]
         end,
         fun (L) ->
                 lists:foreach(fun (F) -> F() end, L)
@@ -46,8 +50,10 @@ decrement_test_() ->
 timing_test_() ->
     {setup,
         fun () ->
-                {ok, Fapp}=elibs_application:start(erl_monitoring),
-                [Fapp]
+                error_logger:tty(false),
+                {ok, Ftwig} = elibs_application:set_env(twig, level, twig_util:level(crit)),
+                {ok, Fapp} = elibs_application:start(erl_monitoring),
+                [Ftwig, Fapp]
         end,
         fun (L) ->
                 lists:foreach(fun (F) -> F() end, L)
@@ -63,8 +69,10 @@ timing_test_() ->
 tc_test_() ->
     {setup,
         fun () ->
-                {ok, Fapp}=elibs_application:start(erl_monitoring),
-                [Fapp]
+                error_logger:tty(false),
+                {ok, Ftwig} = elibs_application:set_env(twig, level, twig_util:level(crit)),
+                {ok, Fapp} = elibs_application:start(erl_monitoring),
+                [Ftwig, Fapp]
         end,
         fun (L) ->
                 lists:foreach(fun (F) -> F() end, L)

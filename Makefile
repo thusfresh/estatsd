@@ -1,46 +1,51 @@
-.PHONY: deps test
-REBAR := rebar
+# Include the common makefile. Must be included at the top. The inclusion is
+# optional since on the first run you don't have the common Makefile yet.
+-include erl-project/make/Makefile-common.mk
+.PHONY : update
 
-all: deps compile
+#########################################################################
+## You can override default settings easily
+#########################################################################
 
-setup: 
+#COOKIE=i_want_a_different_cookie
+# The app name is resolved by looking for an *.app.src file, but you can
+# override this by defining the APP variable yourself.  For example if your
+# project is not rebarized (for whatever reasons...) or is not using an
+# .app.src file. (This is terrible though!)
+#APP=this_is_the_real_app_name
 
-# Compiles the whole application
-compile:
-	@${REBAR} compile
-	@${REBAR} skip_deps=true xref | grep -v "is unused export (Xref)"
+CONFIG=conf/erl_monitoring.config
 
-getdeps:
-	./scripts/verify-dependency-tags && \
-	${REBAR} get-deps
+#########################################################################
+## Common targets
+#########################################################################
 
-# Gets the dependencies to the deps folder. This is necessary for compile to succeed.
-deps:
-	./scripts/verify-dependency-tags && \
-	${REBAR} get-deps && ${REBAR} compile
+# First/default make target (it is run when you do 'make' without an explicit
+# target). The semicolon signifies inheritance from the common Makefile, so
+# the "all" target on the common Makefile is executed first and after that the
+# this "all" is being executed.
+all:: update
+#	echo "This is some stuff happening in this project specifically."
 
-# Cleans any generated files from the repo (except dependencies)
-clean:
-	@-rm -f erl_crash.dump;
-	${REBAR} clean
-	rm -f test/ebin/*
-	rm -f doc/*.html doc/*.css doc/*.png doc/edoc-info
+# These targets must be defined here explicitly because CI/Deployar executes
+# them initially, when there is still no common Makefile available.
+setup:: update
+#	echo "You can also extend them."
 
-# Cleans any downloaded dependencies
-distclean: clean
-	${REBAR} delete-deps
+getdeps:: update
 
-# Runs every test suite under test/ abd generates an html page with detailed info about test coverage
-test: all
-	${REBAR} skip_deps=true eunit
+#########################################################################
+## Do not edit below
+#########################################################################
 
-# Generates the edoc documentation and places it under doc/ .
-docs:
-	${REBAR} skip_deps=true doc
+# Update erl-project. Allow failures of git (eg. executing git inside Mock env)
+update: erl-project
+	@echo "Updating erl-project"
+	-@cd erl-project && git pull && cd ..
 
-# While developing with vi, :!make dialyzer | grep '%:t' can be used to run dialyzer in the current file
-dialyzer: clean compile
-	@dialyzer -Wno_return -Wno_opaque -c ebin
-	
-typer: compile
-	typer --show-exported -I include -I ../ src/*.erl
+# Clone erl-project (only once executed) and add it to .gitignore
+erl-project:
+	@echo "Cloning erl-project"
+	-@git clone -q git@github.com:spilgames/erl-project.git
+	@test "`grep erl-project .gitignore`" || echo "erl-project/" >> .gitignore
+	@make $(MAKECMDGOALS)
