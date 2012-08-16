@@ -1,0 +1,54 @@
+Current version: 0.3.0
+    CHANGE enable some xref_checks
+    NEW add ?TIME(AppName,FuncName) parsetransform
+
+tag: 0.2.12
+    OPT forced estatsd stop and start at startup for env reloading
+
+tag: 0.2.11
+    FIX Added twig dependency in order to using extra.config
+
+tag: 0.2.10
+    CHANGE cleanup estatsd config
+
+tag: 0.2.9
+    CHANGE updated deps, cleanup Makefile
+
+tag: 0.2.8
+    DOC Updated README
+    OPT minor conflict resolution
+    OPT minor deps and README updated
+
+tag: 0.2.7
+    CHANGE bump deps
+
+tag: 0.2.6
+    CHANGE bump deps
+
+tag: 0.2.5
+    NEW Strict dependecies check
+    DOC Added ownership to README file
+    OPT Added extra test to emon_facade:tc (exception handling)
+
+tag: 0.2.4
+    OPT times will be monitored in milliseconds
+
+tag: 0.2.3
+    FIX erlang_monitoring was used instead of erl_monitoring in config file
+
+tag: 0.2.2
+    OPT emon_utils:get_key_string can be called with strings or atoms
+
+tag: 0.2.1
+    OPT emon_utils:statsnode/0 adapted to be more clear
+
+tag: 0.2.0
+    NEW Added macros for facade functions in monitoring.hrl
+
+tag: 0.1.0
+    NEW emon_utils:get_key_string/3
+
+tag: 0.0.0
+    PERF avoided regular expression usage in statsnode/0
+    OPT removed unused dependency on nifutils
+    NEW Added first version of the app
