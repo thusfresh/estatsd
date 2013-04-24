@@ -13,9 +13,12 @@
 
 -export([start_link/4]).
 
-%-export([key2str/1,flush/0]). %% export for debugging 
+%% Only report these memory statistics:
+-define(MEM_KEYS, [total, binary, ets, processes]).
 
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, 
+%-export([key2str/1,flush/0]). %% export for debugging
+
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
 -record(state, {timers,             % gb_tree of timer data
@@ -23,31 +26,31 @@
                 flush_timer,        % TRef of interval timer
                 graphite_host,      % graphite server host
                 graphite_port,      % graphite server port
-                vm_metrics            % flag to enable sending VM metrics on flush
+                vm_metrics          % flag to enable sending VM metrics on flush
                }).
 
 start_link(FlushIntervalMs, GraphiteHost, GraphitePort, VmMetrics) ->
-    gen_server:start_link({local, ?MODULE}, 
-                          ?MODULE, 
-                          [FlushIntervalMs, GraphiteHost, GraphitePort, VmMetrics], 
+    gen_server:start_link({local, ?MODULE},
+                          ?MODULE,
+                          [FlushIntervalMs, GraphiteHost, GraphitePort, VmMetrics],
                           []).
 
 %%
 
 init([FlushIntervalMs, GraphiteHost, GraphitePort, VmMetrics]) ->
-    error_logger:info_msg("estatsd will flush stats to ~p:~w every ~wms\n", 
+    error_logger:info_msg("estatsd will flush stats to ~p:~w every ~wms\n",
                           [ GraphiteHost, GraphitePort, FlushIntervalMs ]),
     ets:new(statsd, [named_table, set]),
     ets:new(statsdgauge, [named_table, set]),
     %% Flush out stats to graphite periodically
-    {ok, Tref} = timer:apply_interval(FlushIntervalMs, gen_server, cast, 
+    {ok, Tref} = timer:apply_interval(FlushIntervalMs, gen_server, cast,
                                                        [?MODULE, flush]),
     State = #state{ timers          = gb_trees:empty(),
                     flush_interval  = FlushIntervalMs,
                     flush_timer     = Tref,
                     graphite_host   = GraphiteHost,
                     graphite_port   = GraphitePort,
-                    vm_metrics        = VmMetrics
+                    vm_metrics      = VmMetrics
                   },
     {ok, State}.
 
@@ -116,9 +119,9 @@ send_to_graphite(Msg, State) ->
     end.
 
 % this string munging is damn ugly compared to javascript :(
-key2str(K) when is_atom(K) -> 
+key2str(K) when is_atom(K) ->
     atom_to_list(K);
-key2str(K) when is_binary(K) -> 
+key2str(K) when is_binary(K) ->
     key2str(binary_to_list(K));
 key2str(K) when is_list(K) ->
     {ok, R1} = re:compile("\\s+"),
@@ -141,7 +144,7 @@ do_report(All, Gauges, State) ->
     {MsgCounters, NumCounters}         = do_report_counters(All, TsStr, State),
     {MsgTimers,   NumTimers}           = do_report_timers(TsStr, State),
     {MsgGauges,   NumGauges}           = do_report_gauges(Gauges),
-    {MsgVmMetrics,   NumVmMetrics}  = do_report_vm_metrics(TsStr, State),
+    {MsgVmMetrics,NumVmMetrics}        = do_report_vm_metrics(TsStr, State),
     %% REPORT TO GRAPHITE
     case NumTimers + NumCounters + NumGauges + NumVmMetrics of
         0 -> nothing_to_report;
@@ -149,9 +152,9 @@ do_report(All, Gauges, State) ->
             FinalMsg = [ MsgCounters,
                          MsgTimers,
                          MsgGauges,
-                         MsgVmMetrics,
+                         MsgVmMetrics
                          %% Also graph the number of graphs we're graphing:
-                         "stats.num_stats ", num2str(NumStats), " ", TsStr, "\n"
+                         %% "stats.num_stats ", num2str(NumStats), " ", TsStr, "\n"
                        ],
             send_to_graphite(FinalMsg, State)
     end.
@@ -162,15 +165,12 @@ do_report_counters(All, TsStr, State) ->
                         KeyS = key2str(Key),
                         Val = Val0 / (State#state.flush_interval/1000),
                         %% Build stats string for graphite
-                        Fragment = [ "stats.counters.", KeyS, " ", 
-                                     io_lib:format("~w", [Val]), " ", 
-                                     TsStr, "\n",
-
-                                     "stats.counters.counts.", KeyS, " ", 
-                                     io_lib:format("~w",[NumVals]), " ", 
+                        %% Revert to old-style (no .counters. and dont log NumVals)
+                        Fragment = [ "stats.", KeyS, " ",
+                                     io_lib:format("~w", [Val]), " ",
                                      TsStr, "\n"
                                    ],
-                        [ Fragment | Acc ]                    
+                        [ Fragment | Acc ]
                 end, [], All),
     {Msg, length(All)}.
 
@@ -226,19 +226,13 @@ do_report_gauges(Gauges) ->
 do_report_vm_metrics(TsStr, State) ->
     case State#state.vm_metrics of
         true ->
-            NodeKey = node_key(),
+            NodeKey = statsnode(),
             {TotalReductions, Reductions} = erlang:statistics(reductions),
-            {NumberOfGCs, WordsReclaimed, _} = erlang:statistics(garbage_collection),
-            {{input, Input}, {output, Output}} = erlang:statistics(io),
             RunQueue = erlang:statistics(run_queue),
             StatsData = [
+                         {used_fd, get_used_fd()},
                          {process_count, erlang:system_info(process_count)},
                          {reductions, Reductions},
-                         {total_reductions, TotalReductions},
-                         {number_of_gcs, NumberOfGCs},
-                         {words_reclaimed, WordsReclaimed},
-                         {input, Input},
-                         {output, Output},
                          {run_queue, RunQueue}
                         ],
             StatsMsg = lists:map(fun({Key, Val}) ->
@@ -254,16 +248,31 @@ do_report_vm_metrics(TsStr, State) ->
                  io_lib:format("~w", [Val]), " ",
                  TsStr, "\n"
                 ]
-            end, erlang:memory()),
+            end, erlang:memory(?MEM_KEYS)),
             Msg = StatsMsg ++ MemoryMsg;
         false ->
             Msg = []
     end,
     {Msg, length(Msg)}.
 
-node_key() ->
-    NodeList = atom_to_list(node()),
-    {ok, R} = re:compile("[\@\.]"),
-    Opts = [global, {return, list}],
-    S = re:replace(NodeList,  R, "_", Opts),
-    key2str(S).
+
+%% @doc Returns a string like ErlangNodeName.ShortHostName
+-spec statsnode() -> string().
+statsnode() ->
+    N=atom_to_list(node()),
+    [Nodename, Hostname]=string:tokens(N, "@"),
+    ShortHostName=lists:takewhile(fun (X) -> X /= $. end, Hostname),
+    string:join([Nodename, ShortHostName], ".").
+
+get_used_fd_lsof() ->
+    case os:find_executable("lsof") of
+        false -> unknown;
+        Path -> Cmd = Path ++ " -d \"0-9999999\" -lna -p " ++ os:getpid(),
+                 string:words(os:cmd(Cmd), $\n) - 1
+    end.
+
+get_used_fd() ->
+    case file:list_dir("/proc/" ++ os:getpid() ++ "/fd") of
+        {ok, Files} -> length(Files);
+        {error, _} -> get_used_fd_lsof()
+    end.
