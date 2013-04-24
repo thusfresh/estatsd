@@ -14,7 +14,7 @@
 -export([start_link/4]).
 
 %% Only report these memory statistics:
--define(MEM_KEYS, [total, binary, ets, processes]).
+-define(MEM_KEYS, [total, binary, atom, ets, processes]).
 
 %-export([key2str/1,flush/0]). %% export for debugging
 
@@ -148,7 +148,7 @@ do_report(All, Gauges, State) ->
     %% REPORT TO GRAPHITE
     case NumTimers + NumCounters + NumGauges + NumVmMetrics of
         0 -> nothing_to_report;
-        NumStats ->
+        _NumStats ->
             FinalMsg = [ MsgCounters,
                          MsgTimers,
                          MsgGauges,
@@ -161,7 +161,7 @@ do_report(All, Gauges, State) ->
 
 do_report_counters(All, TsStr, State) ->
     Msg = lists:foldl(
-                fun({Key, {Val0,NumVals}}, Acc) ->
+                fun({Key, {Val0, _NumVals}}, Acc) ->
                         KeyS = key2str(Key),
                         Val = Val0 / (State#state.flush_interval/1000),
                         %% Build stats string for graphite
@@ -227,7 +227,7 @@ do_report_vm_metrics(TsStr, State) ->
     case State#state.vm_metrics of
         true ->
             NodeKey = statsnode(),
-            {TotalReductions, Reductions} = erlang:statistics(reductions),
+            {_TotalReductions, Reductions} = erlang:statistics(reductions),
             RunQueue = erlang:statistics(run_queue),
             StatsData = [
                          {used_fd, get_used_fd()},
