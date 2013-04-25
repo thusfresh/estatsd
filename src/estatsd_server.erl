@@ -13,19 +13,27 @@
 
 -export([start_link/4]).
 
+-export([set_state_data/2]).
+
 %-export([key2str/1,flush/0]). %% export for debugging
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--record(state, {timers,             % gb_tree of timer data
-                flush_interval,     % ms interval between stats flushing
-                flush_timer,        % TRef of interval timer
-                graphite_host,      % graphite server host
-                graphite_port,      % graphite server port
-                vm_metrics,         % flag to enable sending VM metrics on flush
-                vm_used_stats       % which stats are used
-               }).
+-record(state, {timers, % GB_tree of timer data
+    flush_interval,     % Ms interval between stats flushing
+    flush_timer,        % TRef of interval timer
+    graphite_host,      % Graphite server host
+    graphite_port,      % Graphite server port
+    vm_metrics,         % Flag to enable sending VM metrics on flush
+    vm_used_stats,      % which stats are used
+    vm_key_prefix,      % Needs to end with a . (period). Default "stats.erlangvm."
+    vm_key_postfix      % Needs to start with a . (period). Default ".NODENAME.SHORTHOSTNAME"
+}).
+
+-spec set_state_data(atom(), string()) -> ok.
+set_state_data(Key, Value) ->
+    gen_server:call(?MODULE, {set_state_data, Key, Value}).
 
 start_link(FlushIntervalMs, GraphiteHost, GraphitePort, {VmMetrics, UsedStats}) ->
     gen_server:start_link({local, ?MODULE},
@@ -49,7 +57,9 @@ init([FlushIntervalMs, GraphiteHost, GraphitePort, {VmMetrics, UsedStats}]) ->
                     graphite_host   = GraphiteHost,
                     graphite_port   = GraphitePort,
                     vm_metrics      = VmMetrics,
-                    vm_used_stats   = UsedStats
+                    vm_used_stats   = UsedStats,
+                    vm_key_prefix   = "stats.erlangvm.",
+                    vm_key_postfix  = "." ++ statsnode()
                   },
     {ok, State}.
 
@@ -92,7 +102,12 @@ handle_cast(flush, State) ->
     NewState = State#state{timers = gb_trees:empty()},
     {noreply, NewState}.
 
-handle_call(_,_,State)      -> {reply, ok, State}.
+handle_call({set_state_data, vm_key_prefix, Value}, _, State) ->
+    {reply, ok, State#state{vm_key_prefix=Value}};
+handle_call({set_state_data, vm_key_postfix, Value}, _, State) ->
+    {reply, ok, State#state{vm_key_postfix=Value}};
+handle_call(_,_,State)      ->
+    {reply, ok, State}.
 
 handle_info(_Msg, State)    -> {noreply, State}.
 
@@ -100,7 +115,6 @@ code_change(_, _, State)    -> {ok, State}.
 
 terminate(_, _)             -> ok.
 
-%% INTERNAL STUFF
 
 send_to_graphite(Msg, State) ->
     % io:format("SENDING: ~s\n", [Msg]),
@@ -225,15 +239,14 @@ do_report_gauges(Gauges) ->
 do_report_vm_metrics(TsStr, State) ->
     case State#state.vm_metrics of
         true ->
-            NodeKey = statsnode(),
             UsedStats = State#state.vm_used_stats,
 
             %% Generic statistics
             VmUsedStats = proplists:get_value(vm_statistics, UsedStats),
             StatsData = [ {Key, stat(Key)} || Key <- VmUsedStats ],
             StatsMsg = lists:map(fun({Key, Val}) ->
+                format_vm_key(State, "", Key) ++
                 [
-                 "stats.erlangvm.", NodeKey, ".stats.", key2str(Key), " ",
                  io_lib:format("~w", [Val]), " ",
                  TsStr, "\n"
                 ]
@@ -242,8 +255,8 @@ do_report_vm_metrics(TsStr, State) ->
             %% Memory specific statistics
             VmUsedMem = proplists:get_value(vm_memory, UsedStats),
             MemoryMsg = lists:map(fun({Key, Val}) ->
+                format_vm_key(State, "memory.", Key) ++
                 [
-                 "stats.erlangvm.", NodeKey, ".stats.memory.", key2str(Key), " ",
                  io_lib:format("~w", [Val]), " ",
                  TsStr, "\n"
                 ]
@@ -254,6 +267,12 @@ do_report_vm_metrics(TsStr, State) ->
     end,
     {Msg, length(Msg)}.
 
+
+format_vm_key(#state{
+                vm_key_prefix  = VmKeyPrefix,
+                vm_key_postfix  = VmKeyPostfix
+            }, Prefix, Key) ->
+    [VmKeyPrefix, Prefix, key2str(Key), VmKeyPostfix, " "].
 
 %% @doc Statistics by key. Note that not all statistics are supported
 %%  and we are preferring since-last-call data over absolute values.
@@ -289,15 +308,6 @@ stat(_) ->
     0.
 
 
-%% @doc Returns a string like ShortHostName.ErlangNodeName
--spec statsnode() -> string().
-%% @end
-statsnode() ->
-    N=atom_to_list(node()),
-    [Nodename, Hostname]=string:tokens(N, "@"),
-    ShortHostName=lists:takewhile(fun (X) -> X /= $. end, Hostname),
-    string:join([ShortHostName, Nodename], ".").
-
 %% @doc Determine the number of used file descriptors.
 %% First attempts to read from /proc/PID/fd otherwise fallback to
 %% using lsof to find open files
@@ -314,3 +324,12 @@ get_used_fd_lsof() ->
         Path -> Cmd = Path ++ " -d \"0-9999999\" -lna -p " ++ os:getpid(),
                  string:words(os:cmd(Cmd), $\n) - 1
     end.
+
+
+%% @doc Returns a string like ErlangNodeName.ShortHostName
+-spec statsnode() -> string().
+statsnode() ->
+    N=atom_to_list(node()),
+    [Nodename, Hostname]=string:tokens(N, "@"),
+    ShortHostName=lists:takewhile(fun (X) -> X /= $. end, Hostname),
+    string:join([Nodename, ShortHostName], ".").
