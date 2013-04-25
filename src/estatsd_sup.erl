@@ -78,7 +78,7 @@ get_stats(Name) ->
     [{Name, UsedStats}].
 
 %% @doc Get the default enabled statistics for this key.
--spec default_enabled_stats(atom) -> [atom()].
+-spec default_enabled_stats(vm_statistics | vm_memory) -> [atom()].
 %% @end
 default_enabled_stats(vm_statistics) ->
     [

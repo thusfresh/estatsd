@@ -96,7 +96,7 @@ handle_call(_,_,State)      -> {reply, ok, State}.
 
 handle_info(_Msg, State)    -> {noreply, State}.
 
-code_change(_, _, State)    -> {noreply, State}.
+code_change(_, _, State)    -> {ok, State}.
 
 terminate(_, _)             -> ok.
 
