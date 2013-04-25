@@ -71,8 +71,10 @@ get_all_stats() ->
   [{vm_statistics | vm_memory, [atom()]}].
 %% @end
 get_stats(Name) ->
-    {Enabled, Disabled} = appvar(Name, {[], []}),
-    EnabledSet = sets:from_list(Enabled ++ default_enabled_stats(Name)),
+    Stats = appvar(Name, []),
+    Additional = proplists:get_value(additional, Stats, []),
+    Disabled = proplists:get_value(disabled, Stats, []),
+    EnabledSet = sets:from_list(Additional ++ default_enabled_stats(Name)),
     DisabledSet = sets:from_list(Disabled),
     UsedStats = lists:usort(sets:to_list(sets:subtract(EnabledSet, DisabledSet))),
     [{Name, UsedStats}].
