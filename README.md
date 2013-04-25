@@ -11,15 +11,15 @@ QUICK DEMO
 ==========
 
 Prerequisites:
-* Graphite (or use the included dummy server via "make graphite")
-* Erlang
-* Rebar (on your path)
+ * Graphite (or use the included dummy server via "make graphite")
+ * Erlang
+ * Rebar (on your path)
 
 Running:
-1. make
-2. make go
-3. estatsd:increment(foo, 123).
-4. Observe graphite now has 1 data point.
+ 1. make
+ 2. make go
+ 3. estatsd:increment(foo, 123).
+ 4. Observe graphite now has 1 data point.
 
 
 USAGE
