@@ -16,6 +16,9 @@ docs:
 	${REBAR} doc
 
 # Runs estatsd erlang application.
-# For testing purposes you can also run "./priv/graphite.sh" alongside it as a server.
 go:
 	erl -pa ebin -s estatsd_app -config conf/estatsd
+
+# For testing purposes starts a dummy tcp server based on netcat (nc).
+graphite:
+	./priv/graphite.sh
