@@ -17,7 +17,7 @@ docs:
 
 # Runs estatsd erlang application.
 go:
-	erl -pa ebin -s estatsd_app -config conf/estatsd
+	erl -pa ebin -s estatsd_app -config conf/estatsd -sname estatsd_demo
 
 # For testing purposes starts a dummy tcp server based on netcat (nc).
 graphite:

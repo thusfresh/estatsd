@@ -233,7 +233,7 @@ do_report_vm_metrics(TsStr, State) ->
             StatsData = [ {Key, stat(Key)} || Key <- VmUsedStats ],
             StatsMsg = lists:map(fun({Key, Val}) ->
                 [
-                 "stats.vm.", NodeKey, ".stats.", key2str(Key), " ",
+                 "stats.erlangvm.", NodeKey, ".stats.", key2str(Key), " ",
                  io_lib:format("~w", [Val]), " ",
                  TsStr, "\n"
                 ]
@@ -243,7 +243,7 @@ do_report_vm_metrics(TsStr, State) ->
             VmUsedMem = proplists:get_value(vm_memory, UsedStats),
             MemoryMsg = lists:map(fun({Key, Val}) ->
                 [
-                 "stats.vm.", NodeKey, ".stats.memory.", key2str(Key), " ",
+                 "stats.erlangvm.", NodeKey, ".stats.memory.", key2str(Key), " ",
                  io_lib:format("~w", [Val]), " ",
                  TsStr, "\n"
                 ]
@@ -255,10 +255,15 @@ do_report_vm_metrics(TsStr, State) ->
     {Msg, length(Msg)}.
 
 
-%% @doc Statistics by key.
+%% @doc Statistics by key. Note that not all statistics are supported
+%%  and we are preferring since-list-call data over absolute values.
 -spec stat(atom()) -> non_neg_integer().
+%% @end
 stat(used_fds) ->
-    get_used_fd();
+    case get_used_fd() of
+        unknown -> 0;
+        Used -> Used
+    end;
 stat(process_count) ->
     erlang:system_info(process_count);
 stat(reductions) ->
@@ -282,23 +287,29 @@ stat(_) ->
     0.
 
 
-%% @doc Returns a string like ErlangNodeName.ShortHostName
+%% @doc Returns a string like ShortHostName.ErlangNodeName
 -spec statsnode() -> string().
+%% @end
 statsnode() ->
     N=atom_to_list(node()),
     [Nodename, Hostname]=string:tokens(N, "@"),
     ShortHostName=lists:takewhile(fun (X) -> X /= $. end, Hostname),
-    string:join([Nodename, ShortHostName], ".").
+    string:join([ShortHostName, Nodename], ".").
+
+
+%% @doc Determine the number of used file descriptors.
+%%  First attempts to read from /proc/PID/fd otherwise fallback to
+%%  using lsof to find open files
+%% @end
+get_used_fd() ->
+    case file:list_dir("/proc/" ++ os:getpid() ++ "/fd") of
+        {ok, Files} -> length(Files);
+        {error, _} -> get_used_fd_lsof()
+    end.
 
 get_used_fd_lsof() ->
     case os:find_executable("lsof") of
         false -> unknown;
         Path -> Cmd = Path ++ " -d \"0-9999999\" -lna -p " ++ os:getpid(),
                  string:words(os:cmd(Cmd), $\n) - 1
-    end.
-
-get_used_fd() ->
-    case file:list_dir("/proc/" ++ os:getpid() ++ "/fd") of
-        {ok, Files} -> length(Files);
-        {error, _} -> get_used_fd_lsof()
     end.
