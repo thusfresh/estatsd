@@ -54,6 +54,11 @@ Or for your convenience:
     estatsd:timing(sometast, Start).        %% uses now() and now_diff for you
 
 
+CONFIGURATION
+=============
+
+See [config_example](conf/estatsd.config) for an example configuration
+
 
 NOTES
 =====

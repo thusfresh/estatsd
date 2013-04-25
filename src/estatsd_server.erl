@@ -13,9 +13,6 @@
 
 -export([start_link/4]).
 
-%% Only report these memory statistics:
--define(MEM_KEYS, [total, binary, atom, ets, processes]).
-
 %-export([key2str/1,flush/0]). %% export for debugging
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -26,18 +23,19 @@
                 flush_timer,        % TRef of interval timer
                 graphite_host,      % graphite server host
                 graphite_port,      % graphite server port
-                vm_metrics          % flag to enable sending VM metrics on flush
+                vm_metrics,         % flag to enable sending VM metrics on flush
+                vm_used_stats       % which stats are used
                }).
 
-start_link(FlushIntervalMs, GraphiteHost, GraphitePort, VmMetrics) ->
+start_link(FlushIntervalMs, GraphiteHost, GraphitePort, {VmMetrics, UsedStats}) ->
     gen_server:start_link({local, ?MODULE},
                           ?MODULE,
-                          [FlushIntervalMs, GraphiteHost, GraphitePort, VmMetrics],
+                          [FlushIntervalMs, GraphiteHost, GraphitePort, {VmMetrics, UsedStats}],
                           []).
 
 %%
 
-init([FlushIntervalMs, GraphiteHost, GraphitePort, VmMetrics]) ->
+init([FlushIntervalMs, GraphiteHost, GraphitePort, {VmMetrics, UsedStats}]) ->
     error_logger:info_msg("estatsd will flush stats to ~p:~w every ~wms\n",
                           [ GraphiteHost, GraphitePort, FlushIntervalMs ]),
     ets:new(statsd, [named_table, set]),
@@ -50,7 +48,8 @@ init([FlushIntervalMs, GraphiteHost, GraphitePort, VmMetrics]) ->
                     flush_timer     = Tref,
                     graphite_host   = GraphiteHost,
                     graphite_port   = GraphitePort,
-                    vm_metrics      = VmMetrics
+                    vm_metrics      = VmMetrics,
+                    vm_used_stats   = UsedStats
                   },
     {ok, State}.
 
@@ -227,14 +226,11 @@ do_report_vm_metrics(TsStr, State) ->
     case State#state.vm_metrics of
         true ->
             NodeKey = statsnode(),
-            {_TotalReductions, Reductions} = erlang:statistics(reductions),
-            RunQueue = erlang:statistics(run_queue),
-            StatsData = [
-                         {used_fd, get_used_fd()},
-                         {process_count, erlang:system_info(process_count)},
-                         {reductions, Reductions},
-                         {run_queue, RunQueue}
-                        ],
+            UsedStats = State#state.vm_used_stats,
+
+            %% Generic statistics
+            VmUsedStats = proplists:get_value(vm_statistics, UsedStats),
+            StatsData = [ {Key, stat(Key)} || Key <- VmUsedStats ],
             StatsMsg = lists:map(fun({Key, Val}) ->
                 [
                  "stats.vm.", NodeKey, ".stats.", key2str(Key), " ",
@@ -242,18 +238,48 @@ do_report_vm_metrics(TsStr, State) ->
                  TsStr, "\n"
                 ]
             end, StatsData),
+
+            %% Memory specific statistics
+            VmUsedMem = proplists:get_value(vm_memory, UsedStats),
             MemoryMsg = lists:map(fun({Key, Val}) ->
                 [
-                 "stats.vm.", NodeKey, ".memory.", key2str(Key), " ",
+                 "stats.vm.", NodeKey, ".stats.memory.", key2str(Key), " ",
                  io_lib:format("~w", [Val]), " ",
                  TsStr, "\n"
                 ]
-            end, erlang:memory(?MEM_KEYS)),
+            end, erlang:memory(VmUsedMem)),
             Msg = StatsMsg ++ MemoryMsg;
         false ->
             Msg = []
     end,
     {Msg, length(Msg)}.
+
+
+%% @doc Statistics by key.
+-spec stat(atom()) -> non_neg_integer().
+stat(used_fds) ->
+    get_used_fd();
+stat(process_count) ->
+    erlang:system_info(process_count);
+stat(reductions) ->
+    {_TotalReductions, Reductions} = erlang:statistics(reductions),
+    Reductions;
+stat(context_switches) ->
+    {ContextSwitches, _} = erlang:statistics(context_switches),
+    ContextSwitches;
+stat(garbage_collection) ->
+    {NumberofGCs, _, _} = erlang:statistics(garbage_collection),
+    NumberofGCs;
+stat(run_queue) ->
+    erlang:statistics(run_queue);
+stat(runtime) ->
+    {_, Time_Since_Last_Call} = erlang:statistics(runtime),
+    Time_Since_Last_Call;
+stat(wall_clock) ->
+    {_, Wallclock_Time_Since_Last_Call} = erlang:statistics(wall_clock),
+    Wallclock_Time_Since_Last_Call;
+stat(_) ->
+    0.
 
 
 %% @doc Returns a string like ErlangNodeName.ShortHostName
