@@ -9,13 +9,13 @@ http://codeascraft.etsy.com/2011/02/15/measure-anything-measure-everything/
 QUICK DEMO
 ==========
 
-1) Install and configure graphite (quick-ish)
-2) Install rebar, have it in your path
-3) rebar compile
-4) erl -pa ebin
-5) > application:start(estatsd).
-   > estatsd:increment(foo, 123).
-6) Observe graphite now has 1 data point.
+1. Install and configure graphite (quick-ish)
+2. Install rebar, have it in your path
+3. rebar compile
+4. erl -pa ebin
+5. application:start(estatsd).
+   estatsd:increment(foo, 123).
+6. Observe graphite now has 1 data point.
 
 USAGE
 =====
