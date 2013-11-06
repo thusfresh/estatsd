@@ -91,7 +91,7 @@ default_enabled_stats(vm_statistics) ->
     ];
 default_enabled_stats(vm_memory) ->
     [
-        total,          %% Total memory currently allocated
+        system,         %% System memory
         binary,         %% Currently allocated for binaries
         atom,           %% Currently allocated for atom
         ets,            %% Currently allocated for ets
