@@ -88,6 +88,7 @@ default_enabled_stats(vm_statistics) ->
         process_count,  %% Number of Erlang processes
         reductions,     %% Reductions since last invocation
         run_queue       %% Current run queue length
+        %scheduler_wall_time
     ];
 default_enabled_stats(vm_memory) ->
     [
