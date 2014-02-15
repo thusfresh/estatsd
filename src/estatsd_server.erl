@@ -15,7 +15,7 @@
 
 -export([set_state_data/2]).
 
-%-export([key2str/1,flush/0]). %% export for debugging
+-export([key2str/1]). %% export for debugging
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
@@ -64,7 +64,7 @@ init([FlushIntervalMs, GraphiteHost, GraphitePort, {VmMetrics, UsedStats}]) ->
     {ok, State}.
 
 handle_cast({gauge, Key, Value0}, State) ->
-    Value = {Value0, num2str(unixtime())},
+    Value = {Value0, unixtime()},
     case ets:lookup(statsdgauge, Key) of
         [] ->
             ets:insert(statsdgauge, {Key, [Value]});
@@ -79,8 +79,7 @@ handle_cast({increment, Key, Delta0, Sample}, State) when Sample >= 0, Sample =<
         [] ->
             ets:insert(statsd, {Key, {Delta,1}});
         [{Key,{Tot,Times}}] ->
-            ets:insert(statsd, {Key,{Tot+Delta, Times+1}}),
-            ok
+            ets:insert(statsd, {Key, {Tot+Delta, Times+1}})
     end,
     {noreply, State};
 
@@ -131,29 +130,48 @@ send_to_graphite(Msg, State) ->
             E
     end.
 
-% this string munging is damn ugly compared to javascript :(
+%% Format: " VALUE 123456789\n"
+val_time_nl(Val, TsStr) ->
+    [" ", io_lib:format("~w", [Val]), " ", TsStr, "\n"].
+
+%% Faster implementation compared to original which used
+%% re:compile (everytime). TODO: we can just skip this
+%% check for the keys if you are sure the keys are correct.
 key2str(K) when is_atom(K) ->
     atom_to_list(K);
 key2str(K) when is_binary(K) ->
     key2str(binary_to_list(K));
 key2str(K) when is_list(K) ->
-    {ok, R1} = re:compile("\\s+"),
-    {ok, R2} = re:compile("/"),
-    {ok, R3} = re:compile("[^a-zA-Z_\\-0-9\\.]"),
-    Opts = [global, {return, list}],
-    S1 = re:replace(K,  R1, "_", Opts),
-    S2 = re:replace(S1, R2, "-", Opts),
-    S3 = re:replace(S2, R3, "", Opts),
-    S3.
+    key2str_chars(K, "").
+
+key2str_chars([], Acc) ->
+    lists:reverse(Acc);
+key2str_chars([C | Rest], Acc) when C >= $a, C =< $z ->
+    key2str_chars(Rest, [C | Acc]);
+key2str_chars([C | Rest], Acc) when C >= $A, C =< $Z ->
+    key2str_chars(Rest, [C | Acc]);
+key2str_chars([C | Rest], Acc) when C >= $0, C =< $9 ->
+    key2str_chars(Rest, [C | Acc]);
+key2str_chars([C | Rest], Acc) when C == $_; C == $-; C == $. ->
+    key2str_chars(Rest, [C | Acc]);
+key2str_chars([$/ | Rest], Acc) ->
+    key2str_chars(Rest, [$- | Acc]);
+key2str_chars([C | Rest], Acc) when C == 9; C == 32; C == 10->
+    key2str_chars(Rest, [$_ | Acc]);
+key2str_chars([_ | Rest], Acc) ->
+    key2str_chars(Rest, Acc).
 
 num2str(NN) -> lists:flatten(io_lib:format("~w",[NN])).
 
-unixtime()  -> {Meg,S,_Mic} = erlang:now(), Meg*1000000 + S.
+%% Returns unix timestamp as a string.
+unixtime()  ->
+    {Meg,S,_Mic} = os:timestamp(),
+    integer_to_list(Meg*1000000 + S).
 
 %% Aggregate the stats and generate a report to send to graphite
 do_report(All, Gauges, State) ->
     % One time stamp string used in all stats lines:
-    TsStr = num2str(unixtime()),
+    TsStr = unixtime(),
     {MsgCounters, NumCounters}         = do_report_counters(All, TsStr, State),
     {MsgTimers,   NumTimers}           = do_report_timers(TsStr, State),
     {MsgGauges,   NumGauges}           = do_report_gauges(Gauges),
@@ -166,23 +184,19 @@ do_report(All, Gauges, State) ->
                          MsgTimers,
                          MsgGauges,
                          MsgVmMetrics
-                         %% Also graph the number of graphs we're graphing:
-                         %% "stats.num_stats ", num2str(NumStats), " ", TsStr, "\n"
                        ],
             send_to_graphite(FinalMsg, State)
     end.
 
-do_report_counters(All, TsStr, State) ->
+do_report_counters(All, TsStr, #state{flush_interval=FlushInterval}) ->
+    FlushIntervalSec = FlushInterval/1000,
     Msg = lists:foldl(
                 fun({Key, {Val0, _NumVals}}, Acc) ->
                         KeyS = key2str(Key),
-                        Val = Val0 / (State#state.flush_interval/1000),
+                        Val = Val0 / FlushIntervalSec,  % Per second
                         %% Build stats string for graphite
                         %% Revert to old-style (no .counters. and dont log NumVals)
-                        Fragment = [ "stats.", KeyS, " ",
-                                     io_lib:format("~w", [Val]), " ",
-                                     TsStr, "\n"
-                                   ],
+                        Fragment = [ "stats.", KeyS | val_time_nl(Val, TsStr) ],
                         [ Fragment | Acc ]
                 end, [], All),
     {Msg, length(All)}.
@@ -208,7 +222,7 @@ do_report_timers(TsStr, State) ->
                 Fragment        = [ [Startl, Name, " ", num2str(Val), Endl] || {Name,Val} <-
                                   [ {"mean", Mean},
                                     {"upper", Max},
-                                    {"upper_"++num2str(PctThreshold), MaxAtThreshold},
+                                    {"upper_90", MaxAtThreshold},
                                     {"lower", Min},
                                     {"count", Count}
                                   ]],
@@ -223,11 +237,7 @@ do_report_gauges(Gauges) ->
             Fragments = lists:foldl(
                 fun ({Val, TsStr}, KeyAcc) ->
                     %% Build stats string for graphite
-                    Fragment = [
-                        "stats.gauges.", KeyS, " ",
-                        io_lib:format("~w", [Val]), " ",
-                        TsStr, "\n"
-                    ],
+                    Fragment = [ "stats.gauges.", KeyS | val_time_nl(Val, TsStr) ],
                     [ Fragment | KeyAcc ]
                 end, [], Vals
             ),
@@ -246,20 +256,14 @@ do_report_vm_metrics(TsStr, State) ->
             StatsData = [ {Key, stat(Key)} || Key <- VmUsedStats ],
             StatsMsg = lists:map(fun({Key, Val}) ->
                 format_vm_key(State, "", Key) ++
-                [
-                 io_lib:format("~w", [Val]), " ",
-                 TsStr, "\n"
-                ]
+                val_time_nl(Val, TsStr)
             end, StatsData),
 
             %% Memory specific statistics
             VmUsedMem = proplists:get_value(vm_memory, UsedStats),
             MemoryMsg = lists:map(fun({Key, Val}) ->
                 format_vm_key(State, "memory.", Key) ++
-                [
-                 io_lib:format("~w", [Val]), " ",
-                 TsStr, "\n"
-                ]
+                val_time_nl(Val, TsStr)
             end, erlang:memory(VmUsedMem)),
             Msg = StatsMsg ++ MemoryMsg;
         false ->
@@ -272,7 +276,7 @@ format_vm_key(#state{
                 vm_key_prefix  = VmKeyPrefix,
                 vm_key_postfix  = VmKeyPostfix
             }, Prefix, Key) ->
-    [VmKeyPrefix, Prefix, key2str(Key), VmKeyPostfix, " "].
+    [VmKeyPrefix, Prefix, key2str(Key), VmKeyPostfix].
 
 %% @doc Statistics by key. Note that not all statistics are supported
 %%  and we are preferring since-last-call data over absolute values.
