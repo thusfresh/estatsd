@@ -15,10 +15,10 @@ timing(Key, StartTime = {_,_,_}) ->
     timing(Key,Dur);
 
 % Log timing information, ms
-timing(Key, Duration) when is_integer(Duration) -> 
+timing(Key, Duration) when is_integer(Duration) ->
     gen_server:cast(?SERVER, {timing, Key, Duration});
 
-timing(Key, Duration) -> 
+timing(Key, Duration) ->
     gen_server:cast(?SERVER, {timing, Key, erlang:round(Duration)}).
 
 
