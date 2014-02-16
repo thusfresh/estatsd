@@ -20,6 +20,9 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
+-define(COUNTER_KEY, ek_counter).
+-define(GAUGE_KEY, ek_gauge).
+
 -record(state, {timers, % GB_tree of timer data
     flush_interval,     % Ms interval between stats flushing
     flush_timer,        % TRef of interval timer
@@ -41,13 +44,9 @@ start_link(FlushIntervalMs, GraphiteHost, GraphitePort, {VmMetrics, UsedStats}) 
                           [FlushIntervalMs, GraphiteHost, GraphitePort, {VmMetrics, UsedStats}],
                           []).
 
-%%
-
 init([FlushIntervalMs, GraphiteHost, GraphitePort, {VmMetrics, UsedStats}]) ->
     error_logger:info_msg("estatsd will flush stats to ~p:~w every ~wms\n",
                           [ GraphiteHost, GraphitePort, FlushIntervalMs ]),
-    ets:new(statsd, [named_table, set]),
-    ets:new(statsdgauge, [named_table, set]),
     %% Flush out stats to graphite periodically
     {ok, Tref} = timer:apply_interval(FlushIntervalMs, gen_server, cast,
                                                        [?MODULE, flush]),
@@ -63,23 +62,25 @@ init([FlushIntervalMs, GraphiteHost, GraphitePort, {VmMetrics, UsedStats}]) ->
                   },
     {ok, State}.
 
-handle_cast({gauge, Key, Value0}, State) ->
+handle_cast({gauge, Key0, Value0}, State) ->
     Value = {Value0, unixtime()},
-    case ets:lookup(statsdgauge, Key) of
-        [] ->
-            ets:insert(statsdgauge, {Key, [Value]});
-        [{Key, Values}] ->
-            ets:insert(statsdgauge, {Key, [Value | Values]})
+    Key = {?GAUGE_KEY, Key0},
+    case erlang:get(Key) of
+        undefined ->
+            erlang:put(Key, [Value]);
+        Values ->
+            erlang:put(Key, [Value | Values])
     end,
     {noreply, State};
 
-handle_cast({increment, Key, Delta0, Sample}, State) when Sample >= 0, Sample =< 1 ->
+handle_cast({increment, Key0, Delta0, Sample}, State) when Sample >= 0, Sample =< 1 ->
     Delta = Delta0 * ( 1 / Sample ), %% account for sample rates < 1.0
-    case ets:lookup(statsd, Key) of
-        [] ->
-            ets:insert(statsd, {Key, {Delta,1}});
-        [{Key,{Tot,Times}}] ->
-            ets:insert(statsd, {Key, {Tot+Delta, Times+1}})
+    Key = {?COUNTER_KEY, Key0},
+    case erlang:get(Key) of
+        undefined ->
+            erlang:put(Key, Delta);
+        Tot ->
+            erlang:put(Key, Tot+Delta)
     end,
     {noreply, State};
 
@@ -92,12 +93,12 @@ handle_cast({timing, Key, Duration}, State) ->
     end;
 
 handle_cast(flush, State) ->
-    All = ets:tab2list(statsd),
-    Gauges = ets:tab2list(statsdgauge),
-    spawn( fun() -> do_report(All, Gauges, State) end ),
-    %% WIPE ALL
-    ets:delete_all_objects(statsd),
-    ets:delete_all_objects(statsdgauge),
+    ProcessDict = get(),
+    spawn( fun() -> do_report(ProcessDict, State) end ),
+    %% Erase all keys from the process dictionary!
+    erlang:erase(),
+    %% Hack to fix initial_call
+    erlang:put('$initial_call',{estatsd_server,init,1}),
     NewState = State#state{timers = gb_trees:empty()},
     {noreply, NewState}.
 
@@ -114,9 +115,14 @@ code_change(_, _, State)    -> {ok, State}.
 
 terminate(_, _)             -> ok.
 
-
+%% Make a new TCP connection to the Graphite cluster for every flush:
+%%  - resilient to errors; cluster can go down and no complex
+%%    reconnect logic is required
+%%  - flush interval is only once every 10 seconds by default
+%%    so it doesn't happen all the time
+%%  - tcp ensures we don't need to worry about size of data and makes
+%%    debugging easier (tcpdump, nc)
 send_to_graphite(Msg, State) ->
-    % io:format("SENDING: ~s\n", [Msg]),
     case gen_tcp:connect(State#state.graphite_host,
                          State#state.graphite_port,
                          [list, {packet, 0}]) of
@@ -129,6 +135,7 @@ send_to_graphite(Msg, State) ->
                 [E, State]),
             E
     end.
+
 
 %% Format: " VALUE 123456789\n"
 val_time_nl(Val, TsStr) ->
@@ -169,7 +176,18 @@ unixtime()  ->
     integer_to_list(Meg*1000000 + S).
 
 %% Aggregate the stats and generate a report to send to graphite
-do_report(All, Gauges, State) ->
+do_report(ProcessDict, State) ->
+    {All, Gauges} = lists:foldl(
+            fun({{?COUNTER_KEY, K}, V}, {CoAcc, GaAcc}) ->
+                    {[{K, V} | CoAcc], GaAcc};
+                ({{?GAUGE_KEY, K}, V}, {CoAcc, GaAcc}) ->
+                    {CoAcc, [{K, V} | GaAcc]};
+                (_, Acc) ->
+                    Acc
+            end,
+        {[], []},
+        ProcessDict),
+
     % One time stamp string used in all stats lines:
     TsStr = unixtime(),
     {MsgCounters, NumCounters}         = do_report_counters(All, TsStr, State),
@@ -191,11 +209,10 @@ do_report(All, Gauges, State) ->
 do_report_counters(All, TsStr, #state{flush_interval=FlushInterval}) ->
     FlushIntervalSec = FlushInterval/1000,
     Msg = lists:foldl(
-                fun({Key, {Val0, _NumVals}}, Acc) ->
+                fun({Key, Val0}, Acc) ->
                         KeyS = key2str(Key),
                         Val = Val0 / FlushIntervalSec,  % Per second
                         %% Build stats string for graphite
-                        %% Revert to old-style (no .counters. and dont log NumVals)
                         Fragment = [ "stats.", KeyS | val_time_nl(Val, TsStr) ],
                         [ Fragment | Acc ]
                 end, [], All),
