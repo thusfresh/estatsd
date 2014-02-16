@@ -16,6 +16,7 @@ benchmark(CountKeys, CountRequests) ->
 	Keys = [ lists:flatten(io_lib:format("dummmy.key.~p.demo", [Index])) || Index <- lists:seq(0,CountKeys-1)],
 	Before = get_reductions(),
 	[ estatsd:increment(lists:nth((Counter rem CountKeys)+1, Keys)) || Counter <- lists:seq(1, CountRequests)],
+<<<<<<< HEAD
 	%[ estatsd:timing(lists:nth((Counter rem CountKeys)+1, Keys), 1) || Counter <- lists:seq(1, CountRequests)],
 	timer:sleep(FlushInterval + 500),
 	After = get_reductions(),
@@ -24,6 +25,13 @@ benchmark(CountKeys, CountRequests) ->
 	io:format("Reductions used: ~p\n",[After-Before]),
 	ok = application:stop(estatsd),
 	ok.
+=======
+	[ estatsd:timing(lists:nth((Counter rem CountKeys)+1, Keys), 1) || Counter <- lists:seq(1, CountRequests)],
+	timer:sleep(4500),
+	Reductions = get_reductions(),
+	io:format("Reductions used: ~p\n",[Reductions]),
+	ok = application:stop(estatsd).
+>>>>>>> f1f0dac... CHANGE also timing checks
 
 get_reductions() ->
 	{TotalReductions, _} = erlang:statistics(exact_reductions),
