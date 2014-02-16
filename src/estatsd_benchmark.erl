@@ -15,6 +15,7 @@ benchmark(CountKeys, CountRequests) ->
 	Keys = [ lists:flatten(io_lib:format("dummmy.key.~p.demo", [Index])) || Index <- lists:seq(0,CountKeys-1)],
 	get_reductions(),
 	[ estatsd:increment(lists:nth((Counter rem CountKeys)+1, Keys)) || Counter <- lists:seq(1, CountRequests)],
+	[ estatsd:timing(lists:nth((Counter rem CountKeys)+1, Keys), 1) || Counter <- lists:seq(1, CountRequests)],
 	timer:sleep(4500),
 	Reductions = get_reductions(),
 	io:format("Reductions used: ~p\n",[Reductions]),
