@@ -2,25 +2,29 @@
 
 -export([benchmark/2]).
 
-%% Idea : start estatsd, wait 1 second, then run 10 keys insert 100 items each
-%% Disable vmstats (because of how it can influence stats)
-
+%% @doc CountKeys = how many unique keys
+%% CountRequests = how many unique requests
+-spec benchmark(integer(), integer()) -> ok.
 benchmark(CountKeys, CountRequests) ->
 	Port = 2993,
+	FlushInterval = 4000,
 	estatsd_receiver:start(Port),
-	application:set_env(estatsd, vm_metrics, false),
+	application:set_env(estatsd, vm_metrics, true),
 	application:set_env(estatsd, graphite_port, Port),
-	application:set_env(estatsd, flush_interval, 4000),
+	application:set_env(estatsd, flush_interval, FlushInterval),
 	ok = application:start(estatsd),
 	Keys = [ lists:flatten(io_lib:format("dummmy.key.~p.demo", [Index])) || Index <- lists:seq(0,CountKeys-1)],
-	get_reductions(),
+	Before = get_reductions(),
 	[ estatsd:increment(lists:nth((Counter rem CountKeys)+1, Keys)) || Counter <- lists:seq(1, CountRequests)],
-	[ estatsd:timing(lists:nth((Counter rem CountKeys)+1, Keys), 1) || Counter <- lists:seq(1, CountRequests)],
-	timer:sleep(4500),
-	Reductions = get_reductions(),
-	io:format("Reductions used: ~p\n",[Reductions]),
-	ok = application:stop(estatsd).
+	%[ estatsd:timing(lists:nth((Counter rem CountKeys)+1, Keys), 1) || Counter <- lists:seq(1, CountRequests)],
+	timer:sleep(FlushInterval + 500),
+	After = get_reductions(),
+	{ok, Stats} = estatsd_receiver:get_stats(),
+	io:format("Stats: ~p\n",[Stats]),
+	io:format("Reductions used: ~p\n",[After-Before]),
+	ok = application:stop(estatsd),
+	ok.
 
 get_reductions() ->
-	{_TotalReductions, Reductions} = erlang:statistics(reductions),
-    Reductions.
+	{TotalReductions, _} = erlang:statistics(exact_reductions),
+    TotalReductions.

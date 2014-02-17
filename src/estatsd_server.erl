@@ -38,6 +38,8 @@
 set_state_data(Key, Value) ->
     gen_server:call(?MODULE, {set_state_data, Key, Value}).
 
+-spec start_link(pos_integer(), string(), pos_integer(), {boolean(), list()}) ->
+    {ok, Pid::pid()} | {error, Reason::term()}.
 start_link(FlushIntervalMs, GraphiteHost, GraphitePort, {VmMetrics, UsedStats}) ->
     gen_server:start_link({local, ?MODULE},
                           ?MODULE,
@@ -144,6 +146,7 @@ val_time_nl(Val, TsStr) ->
 %% Faster implementation compared to original which used
 %% re:compile (everytime). TODO: we can just skip this
 %% check for the keys if you are sure the keys are correct.
+-spec key2str(Key :: atom() | binary() | string()) -> string().
 key2str(K) when is_atom(K) ->
     atom_to_list(K);
 key2str(K) when is_binary(K) ->
