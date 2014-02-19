@@ -13,6 +13,7 @@
 -export([accept_loop/1]).
 
 -export([start/1,
+    stop/0,
     set_stats/1,
     get_stats/0]).
 
@@ -27,6 +28,9 @@
 start(Port) ->
     State = #server_state{port = Port},
     gen_server:start_link({local, ?MODULE}, ?MODULE, State, []).
+
+stop() ->
+    gen_server:call(?MODULE, stop).
 
 set_stats(Stats) ->
     gen_server:cast(?MODULE, {set_stats, Stats}).
@@ -59,9 +63,10 @@ accept(State = #server_state{lsocket=LSocket}) ->
     proc_lib:spawn(?MODULE, accept_loop, [{self(), LSocket}]),
     State.
 
-% These are just here to suppress warnings.
 handle_call(get_stats, _Caller, #server_state{received = Received} = State) ->
     {reply, {ok, Received}, State};
+handle_call(stop, _Caller, State) ->
+    {stop, normal, stopping, State};
 handle_call(_Msg, _Caller, State) ->
     {noreply, State}.
 handle_info(_Msg, Library) ->
@@ -82,5 +87,6 @@ loop(Socket) ->
     end.
 
 parse(Line) ->
+    io:format("Line : ~p\n", [Line]),
     [Key, Count, Timestamp] = string:tokens(Line, " \n"),
     {Key, Count, list_to_integer(Timestamp)}.

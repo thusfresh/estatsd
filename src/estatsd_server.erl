@@ -26,9 +26,11 @@
     graphite_host,      % Graphite server host
     graphite_port,      % Graphite server port
     vm_metrics,         % Flag to enable sending VM metrics on flush
-    vm_used_stats,      % which stats are used
+    vm_used_stats,      % Which stats are used
     vm_key_prefix,      % Needs to end with a . (period). Default "stats.erlangvm."
-    vm_key_postfix      % Needs to start with a . (period). Default ".NODENAME.SHORTHOSTNAME"
+    vm_key_postfix,     % Needs to start with a . (period). Default ".NODENAME.SHORTHOSTNAME"
+    vm_previous,        % Dict that stores previous results
+    vm_current          % Dict that stores current results
 }).
 
 -spec set_state_data(atom(), string()) -> ok.
@@ -61,9 +63,11 @@ init([FlushIntervalMs, GraphiteHost, GraphitePort, {VmMetrics, UsedStats}]) ->
                     vm_metrics      = VmMetrics,
                     vm_used_stats   = UsedStats,
                     vm_key_prefix   = "stats.erlangvm.",
-                    vm_key_postfix  = "." ++ statsnode()
+                    vm_key_postfix  = "." ++ statsnode(),
+                    vm_previous     = dict:new(),
+                    vm_current      = dict:new()
                   },
-    {ok, State}.
+    {ok, update_previous_current(State)}.
 
 handle_cast({gauge, Key, Value0}, State) ->
     Value = {Value0, unixtime()},
@@ -79,9 +83,9 @@ handle_cast({increment, Key, Delta0, Sample}, State) when Sample >= 0, Sample =<
     Delta = Delta0 * ( 1 / Sample ), %% account for sample rates < 1.0
     case ets:lookup(statsd, Key) of
         [] ->
-            ets:insert(statsd, {Key, {Delta,1}});
-        [{Key,{Tot,Times}}] ->
-            ets:insert(statsd, {Key, {Tot+Delta, Times+1}})
+            ets:insert(statsd, {Key, Delta});
+        [{Key,Tot}] ->
+            ets:insert(statsd, {Key, Tot+Delta})
     end,
     {noreply, State};
 
@@ -93,15 +97,16 @@ handle_cast({timing, Key, Duration}, State) ->
             {noreply, State#state{timers = gb_trees:update(Key, [Duration|Val], State#state.timers)}}
     end;
 
-handle_cast(flush, State) ->
+handle_cast(flush, State0) ->
+    State1 = update_previous_current(State0),
     All = ets:tab2list(statsd),
     Gauges = ets:tab2list(statsdgauge),
-    spawn( fun() -> do_report(All, Gauges, State) end ),
+    spawn( fun() -> do_report(All, Gauges, State1) end ),
     %% WIPE ALL
     ets:delete_all_objects(statsd),
     ets:delete_all_objects(statsdgauge),
-    NewState = State#state{timers = gb_trees:empty()},
-    {noreply, NewState}.
+    State2 = State1#state{timers = gb_trees:empty()},
+    {noreply, State2}.
 
 handle_call({set_state_data, vm_key_prefix, Value}, _, State) ->
     {reply, ok, State#state{vm_key_prefix=Value}};
@@ -116,9 +121,14 @@ code_change(_, _, State)    -> {ok, State}.
 
 terminate(_, _)             -> ok.
 
-
+%% Make a new TCP connection to the Graphite cluster for every flush:
+%%  - resilient to errors; cluster can go down and no complex
+%%    reconnect logic is required
+%%  - flush interval is only once every 10 seconds by default
+%%    so it doesn't happen all the time
+%%  - tcp ensures we don't need to worry about size of data and makes
+%%    debugging easier (tcpdump, nc)
 send_to_graphite(Msg, State) ->
-    % io:format("SENDING: ~s\n", [Msg]),
     case gen_tcp:connect(State#state.graphite_host,
                          State#state.graphite_port,
                          [list, {packet, 0}]) of
@@ -194,7 +204,7 @@ do_report(All, Gauges, State) ->
 do_report_counters(All, TsStr, #state{flush_interval=FlushInterval}) ->
     FlushIntervalSec = FlushInterval/1000,
     Msg = lists:foldl(
-                fun({Key, {Val0, _NumVals}}, Acc) ->
+                fun({Key, Val0}, Acc) ->
                         KeyS = key2str(Key),
                         Val = Val0 / FlushIntervalSec,  % Per second
                         %% Build stats string for graphite
@@ -249,18 +259,17 @@ do_report_gauges(Gauges) ->
     ),
     {Msg, length(Gauges)}.
 
-do_report_vm_metrics(TsStr, State) ->
+do_report_vm_metrics(TsStr, #state{vm_used_stats=UsedStats} = State) ->
     case State#state.vm_metrics of
         true ->
-            UsedStats = State#state.vm_used_stats,
-
             %% Generic statistics
             VmUsedStats = proplists:get_value(vm_statistics, UsedStats),
-            StatsData = [ {Key, stat(Key)} || Key <- VmUsedStats ],
-            StatsMsg = lists:map(fun({Key, Val}) ->
-                format_vm_key(State, "", Key) ++
-                val_time_nl(Val, TsStr)
-            end, StatsData),
+            StatsMsgs = lists:flatten(lists:foldl(fun(VmUsedStat, StatsMsgAcc) ->
+                    S0 = create_graphite_stats(VmUsedStat, TsStr, State),
+                    S0 ++ StatsMsgAcc
+                end,
+                "",
+                VmUsedStats)),
 
             %% Memory specific statistics
             VmUsedMem = proplists:get_value(vm_memory, UsedStats),
@@ -268,8 +277,10 @@ do_report_vm_metrics(TsStr, State) ->
                 format_vm_key(State, "memory.", Key) ++
                 val_time_nl(Val, TsStr)
             end, erlang:memory(VmUsedMem)),
-            Msg = StatsMsg ++ MemoryMsg;
+
+            StatsMsgs ++ MemoryMsg;
         false ->
+            NewState = State,
             Msg = []
     end,
     {Msg, length(Msg)}.
@@ -280,6 +291,55 @@ format_vm_key(#state{
                 vm_key_postfix  = VmKeyPostfix
             }, Prefix, Key) ->
     [VmKeyPrefix, Prefix, key2str(Key), VmKeyPostfix].
+
+update_previous_current(#state{vm_used_stats=UsedStats} = State) ->
+    lists:foldl(fun({Category, CategoryStats}, StateAcc) ->
+            update_previous_current(Category, CategoryStats, StateAcc)
+        end,
+        State,
+        UsedStats).
+
+
+update_previous_current(vm_memory, _, State) ->
+    State;
+update_previous_current(vm_statistics, [], State) ->
+    State;
+update_previous_current(vm_statistics, [scheduler_wall_time=Key | T], #state{vm_previous=VMPrevious, vm_current=VMCurrent} = State) ->
+    NewSched = stat(Key),
+    % current value becomes the previous value, unless it was not set
+    OldSched = case dict:find(scheduler_wall_time, VMCurrent) of
+        error -> NewSched;
+        {ok, Val} -> Val
+    end,
+
+    NewState = State#state{
+        vm_previous = dict:store(Key, OldSched, VMPrevious),
+        vm_current  = dict:store(Key, NewSched, VMCurrent)
+     },
+    update_previous_current(vm_statistics, T, NewState);
+update_previous_current(vm_statistics, [Key|T], State) ->
+    update_previous_current(vm_statistics, T, State).
+
+create_graphite_stats(scheduler_wall_time = Key, TsStr, #state{vm_previous=VMPrevious, vm_current=VMCurrent} = State ) ->
+    {ok, NewSched} = dict:find(scheduler_wall_time, VMCurrent),
+    {ok, OldSched} = dict:find(scheduler_wall_time, VMPrevious),
+    SchedulerStats = lists:map(fun({{I, A0, T0}, {I, A1, T1}}) ->
+        {I, (A1 - A0)/(T1 - T0)}
+    end,
+    lists:zip(OldSched,NewSched)),
+    StatsMsgs = lists:foldl(fun({SchedulerId, SchedulerStat}, Acc) ->
+        Val = erlang:trunc(SchedulerStat*1000),
+        GraphiteKey = lists:flatten(io_lib:format("~p.scheduler.~p", [Key, SchedulerId])),
+        StatsMsg = format_vm_key(State, "", GraphiteKey) ++ val_time_nl(Val, TsStr),
+        StatsMsg ++ Acc
+    end,
+    "",
+    SchedulerStats),
+    StatsMsgs;
+create_graphite_stats(Key, TsStr, State) ->
+    StatsMsg = format_vm_key(State, "", Key) ++ val_time_nl(stat(Key), TsStr),
+    StatsMsg.
+
 
 %% @doc Statistics by key. Note that not all statistics are supported
 %%  and we are preferring since-last-call data over absolute values.
@@ -311,6 +371,9 @@ stat(runtime) ->
 stat(wall_clock) ->
     {_, Wallclock_Time_Since_Last_Call} = erlang:statistics(wall_clock),
     Wallclock_Time_Since_Last_Call;
+stat(scheduler_wall_time) ->
+    erlang:system_flag(scheduler_wall_time, true),
+    lists:sort(erlang:statistics(scheduler_wall_time));
 stat(_) ->
     0.
 

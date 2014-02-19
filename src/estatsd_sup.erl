@@ -72,11 +72,13 @@ get_all_stats() ->
 %% @end
 get_stats(Name) ->
     Stats = appvar(Name, []),
+    %io:format("Name : ~p, Stats: ~p\n", [Name, Stats]),
     Additional = proplists:get_value(additional, Stats, []),
     Disabled = proplists:get_value(disabled, Stats, []),
     EnabledSet = sets:from_list(Additional ++ default_enabled_stats(Name)),
     DisabledSet = sets:from_list(Disabled),
     UsedStats = lists:usort(sets:to_list(sets:subtract(EnabledSet, DisabledSet))),
+    %io:format("Name : ~p, UsedStats: ~p\n", [Name, UsedStats]),
     [{Name, UsedStats}].
 
 %% @doc Get the default enabled statistics for this key.
@@ -88,6 +90,7 @@ default_enabled_stats(vm_statistics) ->
         process_count,  %% Number of Erlang processes
         reductions,     %% Reductions since last invocation
         run_queue       %% Current run queue length
+        %scheduler_wall_time
     ];
 default_enabled_stats(vm_memory) ->
     [
