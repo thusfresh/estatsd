@@ -21,9 +21,6 @@ timing(Key, Duration) when is_integer(Duration) ->
 timing(Key, Duration) ->
     gen_server:cast(?SERVER, {timing, Key, erlang:round(Duration)}).
 
-
-
-
 % Increments one or more stats counters
 increment(Key) -> increment(Key, 1, 1).
 increment(Key, Amount) -> increment(Key, Amount, 1).

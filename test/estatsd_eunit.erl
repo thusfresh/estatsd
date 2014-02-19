@@ -31,22 +31,22 @@ application_test_() ->
         fun (_) ->
             [
                 ?_assertEqual(ok, estatsd:increment("key1")),
-                ?_assertEqual(ok, estatsd:increment("key2")),
+                ?_assertEqual(ok, estatsd:increment("key1")),
                 ?_assertEqual(ok, estatsd:increment("key2")),
                 ?_assertEqual(ok, estatsd:timing("key3", 1.0)),
                 ?_assertEqual(ok, estatsd:timing("key3", 2.0)),
                 ?_assertEqual(ok, timer:sleep(2000)),
 
                 ?_assertMatch({ok, [
-						{"stats.timers.key3.count","2",_},
+                        {"stats.timers.key3.count","2",_},
                         {"stats.timers.key3.lower","1",_},
                         {"stats.timers.key3.upper_90","2",_},
                         {"stats.timers.key3.upper","2",_},
                         {"stats.timers.key3.mean","1.5",_},
-                		{"stats.key2", "2.0" ,_},
-                		{"stats.key1", "1.0" ,_}
-                	]},
-                	estatsd_receiver:get_stats())
+                        {"stats.key1", "2.0" ,_},
+                        {"stats.key2", "1.0" ,_}
+                    ]},
+                    estatsd_receiver:get_stats())
             ]
         end
     }.
