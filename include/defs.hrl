@@ -1,0 +1,2 @@
+-define(ETS_TABLE_COUNTERS, statsd).
+-define(ETS_TABLE_GAUGES, statsdgauge).

@@ -22,7 +22,7 @@ setup_vmstats() ->
     Port = 2449,
     FlushInterval = 1000,
     ok = application:set_env(estatsd, vm_statistics, [{additional, [scheduler_wall_time]}]),
-    ok = application:set_env(estatsd, vm_memory, [{disabled, [binary, atom, ets, processes]}]),
+    ok = application:set_env(estatsd, vm_memory, [{disabled, [ets]}]),
     ok = application:set_env(estatsd, vm_metrics, true),
     ok = application:set_env(estatsd, graphite_port, Port),
     ok = application:set_env(estatsd, flush_interval, FlushInterval),
@@ -45,17 +45,33 @@ application_novmstats_test_() ->
             [
                 ?_assertEqual(ok, estatsd:increment("key1")),
                 ?_assertEqual(ok, estatsd:increment("key1")),
+                ?_assertEqual(ok, estatsd:increment("key1")),
+                ?_assertEqual(ok, estatsd:increment("key1",1)),
+                ?_assertEqual(ok, estatsd:increment("key1",1,1)),
+                ?_assertEqual(ok, estatsd:decrement("key1")),
+                ?_assertEqual(ok, estatsd:decrement("key1",1)),
+                ?_assertEqual(ok, estatsd:decrement("key1",1,1)),
                 ?_assertEqual(ok, estatsd:increment("key2")),
                 ?_assertEqual(ok, estatsd:timing("key3", 1.0)),
-                ?_assertEqual(ok, estatsd:timing("key3", 2.0)),
+                ?_assertEqual(ok, estatsd:timing("key3", 3.0)),
+                ?_assertEqual(ok, estatsd:timing("key3", 2)),
+                ?_assertEqual(ok, estatsd:timing("key4", erlang:now())),
+                ?_assertEqual(ok, estatsd:gauge("key5", 2)),
                 ?_assertEqual(ok, timer:sleep(2000)),
 
+                %?_assertMatch(ok, ?debugFmt("~p", [estatsd_receiver:get_stats()])),
                 ?_assertMatch({ok, [
-                        {"stats.timers.key3.count","2",_},
+                        {"stats.gauges.key5","2",_},
+                        {"stats.timers.key3.count","3",_},
                         {"stats.timers.key3.lower","1",_},
-                        {"stats.timers.key3.upper_90","2",_},
-                        {"stats.timers.key3.upper","2",_},
-                        {"stats.timers.key3.mean","1.5",_},
+                        {"stats.timers.key3.upper_90","3",_},
+                        {"stats.timers.key3.upper","3",_},
+                        {"stats.timers.key3.mean","2.0",_},
+                        {"stats.timers.key4.count","1",_},
+                        {"stats.timers.key4.lower","0",_},
+                        {"stats.timers.key4.upper_90","0",_},
+                        {"stats.timers.key4.upper","0",_},
+                        {"stats.timers.key4.mean","0.0",_},
                         {"stats.key1", "2.0" ,_},
                         {"stats.key2", "1.0" ,_}
                     ]},
@@ -73,14 +89,18 @@ application_vmstats_test_() ->
                 % wait till after the flush time
                 ?_assertEqual(ok, timer:sleep(1500)),
                 %?_assertMatch(ok, ?debugFmt("~p", [estatsd_receiver:get_stats()])),
-                ?_assertMatch({ok,[{"stats.erlangvm.memory.total.nonode.nohost",_,_},
-                                 {"stats.erlangvm.process_count.nonode.nohost",_,_},
-                                 {"stats.erlangvm.reductions.nonode.nohost",_,_},
-                                 {"stats.erlangvm.run_queue.nonode.nohost",_,_},
-                                 {"stats.erlangvm.scheduler_wall_time.scheduler.1.nonode.nohost",_, _},
-                                 {"stats.erlangvm.scheduler_wall_time.scheduler.2.nonode.nohost",_, _}
-                                 | _ % some other schedulers, but depends on system how many cores
-                            ]}, estatsd_receiver:get_stats())
+                ?_assertMatch({ok,[
+                    {"stats.erlangvm.memory.total.nonode.nohost",_,_},
+                    {"stats.erlangvm.memory.processes.nonode.nohost",_,_},
+                    {"stats.erlangvm.memory.binary.nonode.nohost",_,_},
+                    {"stats.erlangvm.memory.atom.nonode.nohost",_,_},
+                    {"stats.erlangvm.process_count.nonode.nohost",_,_},
+                    {"stats.erlangvm.reductions.nonode.nohost",_,_},
+                    {"stats.erlangvm.run_queue.nonode.nohost",_,_},
+                    {"stats.erlangvm.scheduler_wall_time.scheduler.1.nonode.nohost",_, _},
+                    {"stats.erlangvm.scheduler_wall_time.scheduler.2.nonode.nohost",_, _}
+                    | _ % some other schedulers, but depends on system how many cores
+                ]}, estatsd_receiver:get_stats())
             ]
         end
     }.

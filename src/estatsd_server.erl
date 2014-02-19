@@ -11,6 +11,8 @@
 -module(estatsd_server).
 -behaviour(gen_server).
 
+-include("defs.hrl").
+
 -export([start_link/4]).
 
 -export([set_state_data/2]).
@@ -50,8 +52,8 @@ start_link(FlushIntervalMs, GraphiteHost, GraphitePort, {VmMetrics, UsedStats}) 
 init([FlushIntervalMs, GraphiteHost, GraphitePort, {VmMetrics, UsedStats}]) ->
     error_logger:info_msg("estatsd will flush stats to ~p:~w every ~wms\n",
                           [ GraphiteHost, GraphitePort, FlushIntervalMs ]),
-    ets:new(statsd, [named_table, set]),
-    ets:new(statsdgauge, [named_table, set]),
+    ets:new(?ETS_TABLE_COUNTERS, [named_table, set, public, {write_concurrency, true}]),
+    ets:new(?ETS_TABLE_GAUGES, [named_table, set, private]),
     %% Flush out stats to graphite periodically
     {ok, Tref} = timer:apply_interval(FlushIntervalMs, gen_server, cast,
                                                        [?MODULE, flush]),
@@ -71,21 +73,25 @@ init([FlushIntervalMs, GraphiteHost, GraphitePort, {VmMetrics, UsedStats}]) ->
 
 handle_cast({gauge, Key, Value0}, State) ->
     Value = {Value0, unixtime()},
-    case ets:lookup(statsdgauge, Key) of
+    case ets:lookup(?ETS_TABLE_GAUGES, Key) of
         [] ->
-            ets:insert(statsdgauge, {Key, [Value]});
+            ets:insert(?ETS_TABLE_GAUGES, {Key, [Value]});
         [{Key, Values}] ->
-            ets:insert(statsdgauge, {Key, [Value | Values]})
+            ets:insert(?ETS_TABLE_GAUGES, {Key, [Value | Values]})
     end,
     {noreply, State};
 
 handle_cast({increment, Key, Delta0, Sample}, State) when Sample >= 0, Sample =< 1 ->
-    Delta = Delta0 * ( 1 / Sample ), %% account for sample rates < 1.0
-    case ets:lookup(statsd, Key) of
+    Delta = case {Delta0, Sample} of
+        {1,1} -> 1;                  %% ensure integer for ets:update_counter/3
+        {-1,1} -> -1;
+        _ -> Delta0 * ( 1 / Sample ) %% account for sample rates < 1.0
+    end,
+    case ets:lookup(?ETS_TABLE_COUNTERS, Key) of
         [] ->
-            ets:insert(statsd, {Key, Delta});
+            ets:insert(?ETS_TABLE_COUNTERS, {Key, Delta});
         [{Key,Tot}] ->
-            ets:insert(statsd, {Key, Tot+Delta})
+            ets:insert(?ETS_TABLE_COUNTERS, {Key, Tot+Delta})
     end,
     {noreply, State};
 
@@ -99,12 +105,12 @@ handle_cast({timing, Key, Duration}, State) ->
 
 handle_cast(flush, State0) ->
     State1 = update_previous_current(State0),
-    All = ets:tab2list(statsd),
-    Gauges = ets:tab2list(statsdgauge),
+    All = ets:tab2list(?ETS_TABLE_COUNTERS),
+    Gauges = ets:tab2list(?ETS_TABLE_GAUGES),
     spawn( fun() -> do_report(All, Gauges, State1) end ),
     %% WIPE ALL
-    ets:delete_all_objects(statsd),
-    ets:delete_all_objects(statsdgauge),
+    ets:delete_all_objects(?ETS_TABLE_COUNTERS),
+    ets:delete_all_objects(?ETS_TABLE_GAUGES),
     State2 = State1#state{timers = gb_trees:empty()},
     {noreply, State2}.
 
@@ -260,7 +266,7 @@ do_report_gauges(Gauges) ->
     {Msg, length(Gauges)}.
 
 do_report_vm_metrics(TsStr, #state{vm_used_stats=UsedStats} = State) ->
-    case State#state.vm_metrics of
+    Msg = case State#state.vm_metrics of
         true ->
             %% Generic statistics
             VmUsedStats = proplists:get_value(vm_statistics, UsedStats),
@@ -280,8 +286,7 @@ do_report_vm_metrics(TsStr, #state{vm_used_stats=UsedStats} = State) ->
 
             StatsMsgs ++ MemoryMsg;
         false ->
-            NewState = State,
-            Msg = []
+            ""
     end,
     {Msg, length(Msg)}.
 
@@ -317,7 +322,7 @@ update_previous_current(vm_statistics, [scheduler_wall_time=Key | T], #state{vm_
         vm_current  = dict:store(Key, NewSched, VMCurrent)
      },
     update_previous_current(vm_statistics, T, NewState);
-update_previous_current(vm_statistics, [Key|T], State) ->
+update_previous_current(vm_statistics, [_|T], State) ->
     update_previous_current(vm_statistics, T, State).
 
 create_graphite_stats(scheduler_wall_time = Key, TsStr, #state{vm_previous=VMPrevious, vm_current=VMCurrent} = State ) ->
