@@ -11,20 +11,24 @@
 
 -define(SERVER, estatsd_server).
 
+-type key() :: string() | binary() | atom().
+-type delta() :: float() | integer().
+-type sample() :: float() | integer().
+
+-export_type([key/0, delta/0, sample/0]).
+
 % Convenience: just give it the now() tuple when the work started
+-spec timing(key(), erlang:timestamp() | delta()) -> ok.
 timing(Key, StartTime = {_,_,_}) ->
     Dur = erlang:round(timer:now_diff(os:timestamp(), StartTime)/1000),
     timing(Key,Dur);
-
-% Log timing information, ms
 timing(Key, Duration) when is_integer(Duration) ->
     gen_server:cast(?SERVER, {timing, Key, Duration});
-
 timing(Key, Duration) ->
     gen_server:cast(?SERVER, {timing, Key, erlang:round(Duration)}).
 
 % Increments one or more stats counters
--spec increment(string() | binary() | atom()) -> ok.
+-spec increment(key()) -> ok.
 increment(Key) ->
     % Note that this will fail if the value in the ETS table
     % is NOT an integer. So you shouldn't mix samplesizes or amounts
@@ -40,18 +44,24 @@ increment(Key) ->
         _ ->
             ok
     end.
+-spec increment(key(), delta()) -> ok.
 increment(Key, Amount) ->
     increment(Key, Amount, 1).
+-spec increment(key(), delta(), sample()) -> ok.
 increment(Key, Amount, Sample) when Sample >= 0, Sample =< 1 ->
     gen_server:cast(?SERVER, {increment, Key, Amount, Sample}).
 
+-spec decrement(key()) -> ok.
 decrement(Key) ->
     decrement(Key, 1, 1).
+-spec decrement(key(), delta()) -> ok.
 decrement(Key, Amount) ->
     decrement(Key, Amount, 1).
+-spec decrement(key(), delta(), sample()) -> ok.
 decrement(Key, Amount, Sample) ->
     increment(Key, 0 - Amount, Sample).
 
 % Sets a gauge value
+-spec gauge(key(), delta()) -> ok.
 gauge(Key, Value) when is_number(Value) ->
     gen_server:cast(?SERVER, {gauge, Key, Value}).

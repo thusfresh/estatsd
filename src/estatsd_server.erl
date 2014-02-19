@@ -14,10 +14,11 @@
 -include("defs.hrl").
 
 -export([start_link/4]).
-
 -export([set_state_data/2]).
 
--export([key2str/1]). %% export for debugging
+-ifdef('TEST').
+    -export([key2str/1]).
+-endif.
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
@@ -31,13 +32,16 @@
     vm_used_stats,      % Which stats are used
     vm_key_prefix,      % Needs to end with a . (period). Default "stats.erlangvm."
     vm_key_postfix,     % Needs to start with a . (period). Default ".NODENAME.SHORTHOSTNAME"
-    vm_previous,        % Dict that stores previous results
+    vm_previous,        % Dict that stores previous results (for stateful stats)
     vm_current          % Dict that stores current results
 }).
 
+%% @doc Ability to set vm_key_prefix and vm_key_postfix from
+%% another library, such that you get custom graphite keys.
 -spec set_state_data(atom(), string()) -> ok.
 set_state_data(Key, Value) ->
     gen_server:call(?MODULE, {set_state_data, Key, Value}).
+
 
 -spec start_link(pos_integer(), string(), pos_integer(), {boolean(), list()}) ->
     {ok, Pid::pid()} | {error, Reason::term()}.
@@ -47,7 +51,8 @@ start_link(FlushIntervalMs, GraphiteHost, GraphitePort, {VmMetrics, UsedStats}) 
                           [FlushIntervalMs, GraphiteHost, GraphitePort, {VmMetrics, UsedStats}],
                           []).
 
-%%
+
+% ====================== GEN_SERVER CALLBACKS ===============================
 
 init([FlushIntervalMs, GraphiteHost, GraphitePort, {VmMetrics, UsedStats}]) ->
     error_logger:info_msg("estatsd will flush stats to ~p:~w every ~wms\n",
@@ -127,6 +132,10 @@ code_change(_, _, State)    -> {ok, State}.
 
 terminate(_, _)             -> ok.
 
+
+
+% ====================== INTERNAL ===============================
+
 %% Make a new TCP connection to the Graphite cluster for every flush:
 %%  - resilient to errors; cluster can go down and no complex
 %%    reconnect logic is required
@@ -155,7 +164,7 @@ val_time_nl(Val, TsStr) ->
 %% Faster implementation compared to original which used
 %% re:compile (everytime). TODO: we can just skip this
 %% check for the keys if you are sure the keys are correct.
--spec key2str(Key :: atom() | binary() | string()) -> string().
+-spec key2str(estatsd:key()) -> string().
 key2str(K) when is_atom(K) ->
     atom_to_list(K);
 key2str(K) when is_binary(K) ->

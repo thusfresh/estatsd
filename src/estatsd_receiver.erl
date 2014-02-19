@@ -1,5 +1,4 @@
 %@doc Helper module to receive stats from Graphite.
-%TODO: this should become a gen_server so you can query stats
 -module(estatsd_receiver).
 -behavior(gen_server).
 
