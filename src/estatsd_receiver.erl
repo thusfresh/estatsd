@@ -87,6 +87,5 @@ loop(Socket) ->
     end.
 
 parse(Line) ->
-    io:format("Line : ~p\n", [Line]),
     [Key, Count, Timestamp] = string:tokens(Line, " \n"),
     {Key, Count, list_to_integer(Timestamp)}.
