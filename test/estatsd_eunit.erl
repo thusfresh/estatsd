@@ -43,6 +43,7 @@ application_novmstats_test_() ->
         fun cleanup/1,
         fun (_) ->
             [
+                ?_assertEqual(ok, estatsd:increment("key0", 2.5, 1)),
                 ?_assertEqual(ok, estatsd:increment("key1")),
                 ?_assertEqual(ok, estatsd:increment("key1")),
                 ?_assertEqual(ok, estatsd:increment("key1")),
@@ -57,10 +58,12 @@ application_novmstats_test_() ->
                 ?_assertEqual(ok, estatsd:timing("key3", 2)),
                 ?_assertEqual(ok, estatsd:timing("key4", erlang:now())),
                 ?_assertEqual(ok, estatsd:gauge("key5", 2)),
+                ?_assertEqual(ok, estatsd:gauge("key5", 4)),
                 ?_assertEqual(ok, timer:sleep(2000)),
 
                 %?_assertMatch(ok, ?debugFmt("~p", [estatsd_receiver:get_stats()])),
                 ?_assertMatch({ok, [
+                        {"stats.gauges.key5","4",_},
                         {"stats.gauges.key5","2",_},
                         {"stats.timers.key3.count","3",_},
                         {"stats.timers.key3.lower","1",_},
@@ -72,6 +75,7 @@ application_novmstats_test_() ->
                         {"stats.timers.key4.upper_90","0",_},
                         {"stats.timers.key4.upper","0",_},
                         {"stats.timers.key4.mean","0.0",_},
+                        {"stats.key0", "2.5" ,_},
                         {"stats.key1", "2.0" ,_},
                         {"stats.key2", "1.0" ,_}
                     ]},
