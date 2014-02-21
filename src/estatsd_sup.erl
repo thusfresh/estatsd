@@ -84,10 +84,11 @@ get_stats(Name) ->
 %% @end
 default_enabled_stats(vm_statistics) ->
     [
-        used_fds,       %% Number of FileDescriptors in use (Linux only)
+        %used_fds,      %% Number of FileDescriptors in use (Linux only)
         process_count,  %% Number of Erlang processes
         reductions,     %% Reductions since last invocation
         run_queue       %% Current run queue length
+        %scheduler_wall_time
     ];
 default_enabled_stats(vm_memory) ->
     [
