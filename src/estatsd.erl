@@ -39,7 +39,7 @@ increment(Key) ->
     % try-catch is required, because initially the key will not be set
     % and after flushing it is also removed.
     try
-        ets:update_counter(?ETS_TABLE_COUNTERS, Key, 1),
+        _ = ets:update_counter(?ETS_TABLE_COUNTERS, Key, 1),
         ok
     catch
         error:badarg ->
