@@ -36,13 +36,14 @@ increment(Key) ->
     % To keep it safer, we only optimize increment/1, which is most
     % commonly used.
 
-    % catch is required, because initially the key will not be set
+    % try-catch is required, because initially the key will not be set
     % and after flushing it is also removed.
-    case (catch ets:update_counter(?ETS_TABLE_COUNTERS, Key, 1)) of
-        {'EXIT',{badarg, _}} ->
-            increment(Key,1,1);
-        _ ->
-            ok
+    try
+        ets:update_counter(?ETS_TABLE_COUNTERS, Key, 1),
+        ok
+    catch
+        error:badarg ->
+            increment(Key,1,1)
     end.
 -spec increment(key(), delta()) -> ok.
 increment(Key, Amount) ->
