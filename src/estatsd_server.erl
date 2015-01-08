@@ -13,7 +13,7 @@
 
 -include("defs.hrl").
 
--export([start_link/4]).
+-export([start_link/5]).
 -export([set_state_data/2]).
 
 -ifdef('TEST').
@@ -28,6 +28,9 @@
     flush_timer,        % TRef of interval timer
     graphite_host,      % Graphite server host
     graphite_port,      % Graphite server port
+    stats_prefix,       % The general stats prefix
+    timer_prefix,       % The timer metric prefix
+    gauge_prefix,       % The gauge metric prefix
     vm_metrics,         % Flag to enable sending VM metrics on flush
     vm_used_stats,      % Which stats are used
     vm_key_prefix,      % Needs to end with a . (period). Default "stats.erlangvm."
@@ -43,18 +46,21 @@ set_state_data(Key, Value) ->
     gen_server:call(?MODULE, {set_state_data, Key, Value}).
 
 
--spec start_link(pos_integer(), string(), pos_integer(), {boolean(), list()}) ->
+-spec start_link(pos_integer(), string(), pos_integer(),
+                 {boolean(), list()}, [proplists:property()]) ->
     {ok, Pid::pid()} | {error, Reason::term()}.
-start_link(FlushIntervalMs, GraphiteHost, GraphitePort, {VmMetrics, UsedStats}) ->
+start_link(FlushIntervalMs, GraphiteHost, GraphitePort,
+           {VmMetrics, UsedStats}, Opts) ->
     gen_server:start_link({local, ?MODULE},
                           ?MODULE,
-                          [FlushIntervalMs, GraphiteHost, GraphitePort, {VmMetrics, UsedStats}],
+                          [FlushIntervalMs, GraphiteHost, GraphitePort,
+                           {VmMetrics, UsedStats}, Opts],
                           []).
 
 
 % ====================== GEN_SERVER CALLBACKS ===============================
 
-init([FlushIntervalMs, GraphiteHost, GraphitePort, {VmMetrics, UsedStats}]) ->
+init([FlushIntervalMs, GraphiteHost, GraphitePort, {VmMetrics, UsedStats}, Opts]) ->
     error_logger:info_msg("estatsd will flush stats to ~p:~w every ~wms\n",
                           [ GraphiteHost, GraphitePort, FlushIntervalMs ]),
     ets:new(?ETS_TABLE_COUNTERS, [named_table, set, public, {write_concurrency, true}]),
@@ -62,14 +68,20 @@ init([FlushIntervalMs, GraphiteHost, GraphitePort, {VmMetrics, UsedStats}]) ->
     %% Flush out stats to graphite periodically
     {ok, Tref} = timer:apply_interval(FlushIntervalMs, gen_server, cast,
                                                        [?MODULE, flush]),
+    StatsPrefix = proplists:get_value(stats_prefix, Opts, ?DEFAULT_STATS_PREFIX),
     State = #state{ timers          = gb_trees:empty(),
                     flush_interval  = FlushIntervalMs,
                     flush_timer     = Tref,
                     graphite_host   = GraphiteHost,
                     graphite_port   = GraphitePort,
+                    stats_prefix    = StatsPrefix,
+                    timer_prefix    = proplists:get_value(timer_prefix, Opts,
+                                                          ?DEFAULT_TIMER_PREFIX),
+                    gauge_prefix    = proplists:get_value(gauge_prefix, Opts,
+                                                          ?DEFAULT_GAUGE_PREFIX),
                     vm_metrics      = VmMetrics,
                     vm_used_stats   = UsedStats,
-                    vm_key_prefix   = "stats.erlangvm.",
+                    vm_key_prefix   = StatsPrefix ++ ".erlangvm.",
                     vm_key_postfix  = "." ++ statsnode(),
                     vm_previous     = dict:new(),
                     vm_current      = dict:new()
@@ -202,7 +214,7 @@ do_report(All, Gauges, State) ->
     TsStr = unixtime(),
     {MsgCounters, NumCounters}         = do_report_counters(All, TsStr, State),
     {MsgTimers,   NumTimers}           = do_report_timers(TsStr, State),
-    {MsgGauges,   NumGauges}           = do_report_gauges(Gauges),
+    {MsgGauges,   NumGauges}           = do_report_gauges(Gauges, State),
     {MsgVmMetrics,NumVmMetrics}        = do_report_vm_metrics(TsStr, State),
     %% REPORT TO GRAPHITE
     case NumTimers + NumCounters + NumGauges + NumVmMetrics of
@@ -216,7 +228,8 @@ do_report(All, Gauges, State) ->
             send_to_graphite(FinalMsg, State)
     end.
 
-do_report_counters(All, TsStr, #state{flush_interval=FlushInterval}) ->
+do_report_counters(All, TsStr, #state{flush_interval=FlushInterval,
+                                      stats_prefix=StatsPrefix}) ->
     FlushIntervalSec = FlushInterval/1000,
     Msg = lists:foldl(
                 fun({Key, Val0}, Acc) ->
@@ -224,12 +237,13 @@ do_report_counters(All, TsStr, #state{flush_interval=FlushInterval}) ->
                         Val = Val0 / FlushIntervalSec,  % Per second
                         %% Build stats string for graphite
                         %% Revert to old-style (no .counters. and dont log NumVals)
-                        Fragment = [ "stats.", KeyS | val_time_nl(Val, TsStr) ],
+                        Fragment = [ StatsPrefix, KeyS | val_time_nl(Val, TsStr) ],
                         [ Fragment | Acc ]
                 end, [], All),
     {Msg, length(All)}.
 
-do_report_timers(TsStr, State) ->
+do_report_timers(TsStr, #state{stats_prefix=StatsPrefix,
+                               timer_prefix=TimerPrefix} = State) ->
     Timings = gb_trees:to_list(State#state.timers),
     Msg = lists:foldl(
         fun({Key, Vals}, Acc) ->
@@ -245,7 +259,7 @@ do_report_timers(TsStr, State) ->
                 MaxAtThreshold  = lists:nth(NumInThreshold, Values),
                 Mean            = lists:sum(Values1) / NumInThreshold,
                 %% Build stats string for graphite
-                Startl          = [ "stats.timers.", KeyS, "." ],
+                Startl          = [join([StatsPrefix, TimerPrefix]), ".", KeyS, "." ],
                 Endl            = [" ", TsStr, "\n"],
                 Fragment        = [ [Startl, Name, " ", num2str(Val), Endl] || {Name,Val} <-
                                   [ {"mean", Mean},
@@ -258,14 +272,16 @@ do_report_timers(TsStr, State) ->
         end, [], Timings),
     {Msg, length(Msg)}.
 
-do_report_gauges(Gauges) ->
+do_report_gauges(Gauges, #state{stats_prefix=StatsPrefix,
+                                gauge_prefix=GaugePrefix}) ->
     Msg = lists:foldl(
         fun({Key, Vals}, Acc) ->
             KeyS = key2str(Key),
             Fragments = lists:foldl(
                 fun ({Val, TsStr}, KeyAcc) ->
                     %% Build stats string for graphite
-                    Fragment = [ "stats.gauges.", KeyS | val_time_nl(Val, TsStr) ],
+                    Fragment = [join([StatsPrefix, GaugePrefix]), ".", KeyS |
+                                 val_time_nl(Val, TsStr) ],
                     [ Fragment | KeyAcc ]
                 end, [], Vals
             ),
@@ -417,3 +433,26 @@ statsnode() ->
     [Nodename, Hostname]=string:tokens(N, "@"),
     ShortHostName=lists:takewhile(fun (X) -> X /= $. end, Hostname),
     string:join([Nodename, ShortHostName], ".").
+
+
+
+%% @doc Interposes "." between each two items in the list.
+%% If item is `none', it is skipped.
+-spec join(list()) -> list().
+join(List) ->
+    join(List, ".").
+
+
+-spec join(list(), any) -> list().
+join([], _Separator) ->
+    [];
+join([Head | Tail], Separator) ->
+    join(Tail, Separator, [Head]).
+
+
+join([], _Separator, Acc) ->
+    lists:reverse(Acc);
+join([none | Tail], Separator, Acc) ->
+    join(Tail, Separator, Acc);
+join([Head | Tail], Separator, Acc) ->
+    join(Tail, Separator, [Head, Separator | Acc]).

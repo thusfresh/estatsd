@@ -1,6 +1,7 @@
 -module(estatsd_sup).
-
 -behaviour(supervisor).
+
+-include("defs.hrl").
 
 %% API
 -export([start_link/0, start_link/1, start_link/3]).
@@ -14,6 +15,9 @@
 -define(GRAPHITE_PORT,  appvar(graphite_port,  2003)).
 %% Toggle VM stats on (default) or off.
 -define(VM_METRICS,     appvar(vm_metrics,     true)).
+-define(OPTS, [{stats_prefix, appvar(stats_prefix, ?DEFAULT_STATS_PREFIX)},
+               {timer_prefix, appvar(timer_prefix, ?DEFAULT_TIMER_PREFIX)},
+               {gauge_prefix, appvar(gauge_prefix, ?DEFAULT_GAUGE_PREFIX)}]).
 
 
 %% ===================================================================
@@ -22,29 +26,30 @@
 
 
 start_link() ->
-    start_link( ?FLUSH_INTERVAL, ?GRAPHITE_HOST, ?GRAPHITE_PORT, ?VM_METRICS).
+    start_link( ?FLUSH_INTERVAL, ?GRAPHITE_HOST, ?GRAPHITE_PORT, ?VM_METRICS, ?OPTS).
 
 start_link(FlushIntervalMs) ->
-    start_link( FlushIntervalMs, ?GRAPHITE_HOST, ?GRAPHITE_PORT, ?VM_METRICS).
+    start_link( FlushIntervalMs, ?GRAPHITE_HOST, ?GRAPHITE_PORT, ?VM_METRICS, ?OPTS).
 
 start_link(FlushIntervalMs, GraphiteHost, GraphitePort) ->
-    start_link( FlushIntervalMs, GraphiteHost, GraphitePort, ?VM_METRICS).
+    start_link( FlushIntervalMs, GraphiteHost, GraphitePort, ?VM_METRICS, ?OPTS).
 
-start_link(FlushIntervalMs, GraphiteHost, GraphitePort, VmMetrics) ->
+start_link(FlushIntervalMs, GraphiteHost, GraphitePort, VmMetrics, Opts) ->
     supervisor:start_link({local, ?MODULE},
                           ?MODULE,
                           [FlushIntervalMs, GraphiteHost, GraphitePort,
-                          {VmMetrics, get_all_stats()}]).
+                           {VmMetrics, get_all_stats()}, Opts]).
 
 %% ===================================================================
 %% Supervisor callbacks
 %% ===================================================================
 
-init([FlushIntervalMs, GraphiteHost, GraphitePort, {VmMetrics, UsedStats}]) ->
+init([FlushIntervalMs, GraphiteHost, GraphitePort, {VmMetrics, UsedStats}, Opts]) ->
     Children = [
         {estatsd_server,
          {estatsd_server, start_link,
-             [FlushIntervalMs, GraphiteHost, GraphitePort, {VmMetrics, UsedStats}]},
+             [FlushIntervalMs, GraphiteHost, GraphitePort,
+              {VmMetrics, UsedStats}, Opts]},
          permanent, 5000, worker, [estatsd_server]}
     ],
     {ok, { {one_for_one, 10000, 10}, Children} }.
