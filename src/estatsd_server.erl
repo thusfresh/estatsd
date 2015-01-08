@@ -245,7 +245,7 @@ do_report_timers(TsStr, State) ->
                 MaxAtThreshold  = lists:nth(NumInThreshold, Values),
                 Mean            = lists:sum(Values1) / NumInThreshold,
                 %% Build stats string for graphite
-                Startl          = [ "stats.timers.", KeyS, "." ],
+                Startl          = [ "stats.", KeyS, "." ],
                 Endl            = [" ", TsStr, "\n"],
                 Fragment        = [ [Startl, Name, " ", num2str(Val), Endl] || {Name,Val} <-
                                   [ {"mean", Mean},
@@ -265,7 +265,7 @@ do_report_gauges(Gauges) ->
             Fragments = lists:foldl(
                 fun ({Val, TsStr}, KeyAcc) ->
                     %% Build stats string for graphite
-                    Fragment = [ "stats.gauges.", KeyS | val_time_nl(Val, TsStr) ],
+                    Fragment = [ "stats.", KeyS | val_time_nl(Val, TsStr) ],
                     [ Fragment | KeyAcc ]
                 end, [], Vals
             ),
