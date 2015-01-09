@@ -29,6 +29,7 @@
     graphite_host,      % Graphite server host
     graphite_port,      % Graphite server port
     stats_prefix,       % The general stats prefix
+    counter_prefix,     % The counter metric prefix
     timer_prefix,       % The timer metric prefix
     gauge_prefix,       % The gauge metric prefix
     vm_metrics,         % Flag to enable sending VM metrics on flush
@@ -75,6 +76,8 @@ init([FlushIntervalMs, GraphiteHost, GraphitePort, {VmMetrics, UsedStats}, Opts]
                     graphite_host   = GraphiteHost,
                     graphite_port   = GraphitePort,
                     stats_prefix    = StatsPrefix,
+                    counter_prefix  = proplists:get_value(counter_prefix, Opts,
+                                                          ?DEFAULT_COUNTER_PREFIX),
                     timer_prefix    = proplists:get_value(timer_prefix, Opts,
                                                           ?DEFAULT_TIMER_PREFIX),
                     gauge_prefix    = proplists:get_value(gauge_prefix, Opts,
@@ -229,7 +232,8 @@ do_report(All, Gauges, State) ->
     end.
 
 do_report_counters(All, TsStr, #state{flush_interval=FlushInterval,
-                                      stats_prefix=StatsPrefix}) ->
+                                      stats_prefix=StatsPrefix,
+                                      counter_prefix=CounterPrefix}) ->
     FlushIntervalSec = FlushInterval/1000,
     Msg = lists:foldl(
                 fun({Key, Val0}, Acc) ->
@@ -237,7 +241,8 @@ do_report_counters(All, TsStr, #state{flush_interval=FlushInterval,
                         Val = Val0 / FlushIntervalSec,  % Per second
                         %% Build stats string for graphite
                         %% Revert to old-style (no .counters. and dont log NumVals)
-                        Fragment = [ StatsPrefix, KeyS | val_time_nl(Val, TsStr) ],
+                        Fragment = [ join([StatsPrefix, CounterPrefix]), ".", KeyS
+                                     | val_time_nl(Val, TsStr) ],
                         [ Fragment | Acc ]
                 end, [], All),
     {Msg, length(All)}.

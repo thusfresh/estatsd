@@ -15,9 +15,10 @@
 -define(GRAPHITE_PORT,  appvar(graphite_port,  2003)).
 %% Toggle VM stats on (default) or off.
 -define(VM_METRICS,     appvar(vm_metrics,     true)).
--define(OPTS, [{stats_prefix, appvar(stats_prefix, ?DEFAULT_STATS_PREFIX)},
-               {timer_prefix, appvar(timer_prefix, ?DEFAULT_TIMER_PREFIX)},
-               {gauge_prefix, appvar(gauge_prefix, ?DEFAULT_GAUGE_PREFIX)}]).
+-define(OPTS, [{stats_prefix,   appvar(stats_prefix, ?DEFAULT_STATS_PREFIX)},
+               {counter_prefix, appvar(counter_prefix, ?DEFAULT_COUNTER_PREFIX)},
+               {timer_prefix,   appvar(timer_prefix, ?DEFAULT_TIMER_PREFIX)},
+               {gauge_prefix,   appvar(gauge_prefix, ?DEFAULT_GAUGE_PREFIX)}]).
 
 
 %% ===================================================================
